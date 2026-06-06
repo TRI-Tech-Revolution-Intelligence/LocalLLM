@@ -6,6 +6,13 @@ on:
       - 'v*'
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      upload_release:
+        description: 'Upload artifacts to existing release?'
+        type: boolean
+        default: true
+        required: false
 
 permissions:
   contents: write
@@ -100,15 +107,30 @@ jobs:
     name: Upload to Release
     needs: [build-linux, build-macos]
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: |
+      (github.event_name == 'release' && github.event.action == 'published')
+      || (github.event_name == 'workflow_dispatch'
+          && github.event.inputs.upload_release == 'true')
     steps:
       - uses: actions/download-artifact@v4
         with:
           pattern: '*'
           merge-multiple: true
 
-      - name: Upload assets to release
+      - name: Upload assets to release (release event)
+        if: github.event_name == 'release'
         uses: shogo82148/actions-upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./*
+
+      - name: Upload assets to release (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+          echo "Uploading to tag: $TAG"
+          for f in *; do
+            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber
+          done
