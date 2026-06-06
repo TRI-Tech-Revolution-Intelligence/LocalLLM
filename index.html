@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/app-icon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>LocalLLM</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <img class="app-logo" src="/app-icon.png" alt="" />
+          <div>
+            <p class="eyebrow">llama.cpp control</p>
+            <h1>LocalLLM</h1>
+          </div>
+        </div>
+        <div class="status-strip">
+          <label class="theme-picker">
+            Theme
+            <select id="theme-select">
+              <option value="spotify">Spotify</option>
+              <option value="sage">Sage</option>
+              <option value="graphite">Graphite</option>
+              <option value="paper">Paper</option>
+              <option value="webmcp">WebMCP</option>
+            </select>
+          </label>
+          <span id="server-pill" class="pill muted">Server offline</span>
+          <span id="model-count" class="pill">0 models</span>
+          <span id="tool-status" class="tool-status">Checking tools</span>
+        </div>
+      </header>
+
+      <nav class="app-tabs" role="tablist" aria-label="Application views">
+        <button id="app-tab-control" class="app-tab-button" type="button" role="tab" aria-selected="true" aria-controls="app-view-control" data-app-tab="control">Control</button>
+        <button id="app-tab-webui" class="app-tab-button" type="button" role="tab" aria-selected="false" aria-controls="app-view-webui" data-app-tab="webui" disabled>Web UI</button>
+      </nav>
+
+      <section id="app-view-control" class="app-view" role="tabpanel" aria-labelledby="app-tab-control">
+      <section id="workspace" class="workspace">
+        <section class="panel server-panel" aria-labelledby="server-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">runtime</p>
+              <h2 id="server-heading">Server</h2>
+            </div>
+            <div class="button-row">
+              <button id="apply-advanced-preset" type="button">New Preset</button>
+              <button id="start-server" class="primary" type="button">Start</button>
+              <button id="stop-server" type="button">Stop</button>
+              <button id="open-server" type="button">WebUI</button>
+            </div>
+          </div>
+
+          <label>
+            Model
+            <select id="model-select"></select>
+          </label>
+
+          <details class="profile-editor" open>
+            <summary>Profile editor</summary>
+            <div class="profile-grid">
+              <label>
+                Profile
+                <select id="profile-select"></select>
+              </label>
+              <label>
+                Name
+                <input id="profile-name" autocomplete="off" spellcheck="false" />
+              </label>
+              <div class="profile-actions">
+                <span id="profile-status" class="profile-status">Default profile</span>
+                <div class="button-row">
+                  <button id="new-model-profile" type="button">New</button>
+                  <button id="save-model-profile" type="button">Save Profile</button>
+                  <button id="delete-model-profile" type="button">Delete</button>
+                  <button id="load-default-profile" type="button">Defaults</button>
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <div class="vram-box">
+            <strong id="vram-total">VRAM estimate: no model</strong>
+            <span id="vram-detail">Pick a GGUF model to estimate.</span>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              Host
+              <input id="host" autocomplete="off" spellcheck="false" />
+            </label>
+            <label>
+              Port
+              <input id="port" type="number" min="1" max="65535" />
+            </label>
+            <label>
+              Context (-c) 4096, 8192, 32768
+              <input id="ctx-size" type="number" min="0" step="512" />
+            </label>
+            <label>
+              GPU layers (-ngl) auto, 0, 99, 999
+              <input id="gpu-layers" autocomplete="off" spellcheck="false" placeholder="auto" />
+            </label>
+            <label>
+              Threads (-t) 0, 4, 8, 16
+              <input id="threads" type="number" min="0" step="1" />
+            </label>
+            <label>
+              Batch (-b) 0, 512, 1024, 2048
+              <input id="batch-size" type="number" min="0" step="64" />
+            </label>
+            <label>
+              UBatch (-ub) 0, 256, 512
+              <input id="ubatch-size" type="number" min="0" step="64" />
+            </label>
+            <label>
+              Parallel (-np) -1, 1, 2, 4
+              <input id="parallel" type="number" min="-1" step="1" />
+            </label>
+            <label>
+              Launch
+              <select id="terminal-mode">
+                <option value="background">Background</option>
+                <option value="visible">Show terminal</option>
+              </select>
+            </label>
+          </div>
+
+          <details class="advanced-panel" open>
+            <summary>Advanced parameters</summary>
+
+            <details id="kv-cache-options" class="option-group collapsible-group" open>
+              <summary class="option-group-heading">
+                <h3>KV Cache & Batching</h3>
+              </summary>
+              <label class="checkbox-label compact-toggle">
+                <input id="enable-kv-cache-options" type="checkbox" />
+                Use
+              </label>
+              <div class="form-grid advanced-grid">
+                <label>
+                  Cache K (-ctk) f16, q8_0, q4_0
+                  <select id="cache-type-k">
+                    <option value="">Default</option>
+                    <option value="f32">f32</option>
+                    <option value="f16">f16</option>
+                    <option value="bf16">bf16</option>
+                    <option value="q8_0">q8_0</option>
+                    <option value="q4_0">q4_0</option>
+                    <option value="q4_1">q4_1</option>
+                    <option value="iq4_nl">iq4_nl</option>
+                    <option value="q5_0">q5_0</option>
+                    <option value="q5_1">q5_1</option>
+                  </select>
+                </label>
+                <label>
+                  Cache V (-ctv) f16, q8_0, q4_0
+                  <select id="cache-type-v">
+                    <option value="">Default</option>
+                    <option value="f32">f32</option>
+                    <option value="f16">f16</option>
+                    <option value="bf16">bf16</option>
+                    <option value="q8_0">q8_0</option>
+                    <option value="q4_0">q4_0</option>
+                    <option value="q4_1">q4_1</option>
+                    <option value="iq4_nl">iq4_nl</option>
+                    <option value="q5_0">q5_0</option>
+                    <option value="q5_1">q5_1</option>
+                  </select>
+                </label>
+                <label>
+                  Flash attn (-fa) auto, on, off
+                  <select id="flash-attention">
+                    <option value="">Default</option>
+                    <option value="on">on</option>
+                    <option value="off">off</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+
+            <details id="gpu-memory-options" class="option-group collapsible-group" open>
+              <summary class="option-group-heading">
+                <h3>GPU & Memory</h3>
+              </summary>
+              <label class="checkbox-label compact-toggle">
+                <input id="enable-gpu-memory-options" type="checkbox" />
+                Use
+              </label>
+              <div class="form-grid advanced-grid">
+                <label>
+                  Fit (-fit) on, off
+                  <select id="fit">
+                    <option value="">Default</option>
+                    <option value="on">on</option>
+                    <option value="off">off</option>
+                  </select>
+                </label>
+                <label>
+                  Fit target (-fitt) 512, 1024, 2048
+                  <input id="fit-target" autocomplete="off" spellcheck="false" placeholder="1024" />
+                </label>
+                <label>
+                  Fit ctx (-fitc) 0, 4096, 8192
+                  <input id="fit-ctx" type="number" min="0" step="512" />
+                </label>
+                <label>
+                  Devices (--devices) auto, CUDA0, Vulkan0
+                  <input id="devices" autocomplete="off" spellcheck="false" placeholder="CUDA0,Vulkan0" />
+                </label>
+                <label>
+                  Tensor split (--tensor-split) 1,1 / 3,1
+                  <input id="tensor-split" autocomplete="off" spellcheck="false" placeholder="1,1" />
+                </label>
+                <label>
+                  N CPU MoE (-ncmoe) 0, 1, 8, 30
+                  <input id="no-cpu-moe" type="number" min="0" step="1" />
+                </label>
+              </div>
+              <div class="toggle-row">
+                <label class="checkbox-label">
+                  <input id="no-mmap" type="checkbox" />
+                  No mmap
+                </label>
+                <label class="checkbox-label">
+                  <input id="mlock" type="checkbox" />
+                  Mlock
+                </label>
+              </div>
+            </details>
+
+            <details id="sampling-options" class="option-group collapsible-group" open>
+              <summary class="option-group-heading">
+                <h3>Sampling & Temperature</h3>
+              </summary>
+              <label class="checkbox-label compact-toggle">
+                <input id="enable-sampling-options" type="checkbox" />
+                Use
+              </label>
+              <div class="form-grid advanced-grid">
+                <label>
+                  Temperature (--temp) 0, 0.7, 1
+                  <input id="temperature" autocomplete="off" spellcheck="false" placeholder="0.7" />
+                </label>
+                <label>
+                  Top K (--top-k) 0, 40, 100
+                  <input id="top-k" autocomplete="off" spellcheck="false" placeholder="40" />
+                </label>
+                <label>
+                  Top P (--top-p) 0.8, 0.9, 0.95
+                  <input id="top-p" autocomplete="off" spellcheck="false" placeholder="0.95" />
+                </label>
+                <label>
+                  Min P (--min-p) 0.05, 0.1
+                  <input id="min-p" autocomplete="off" spellcheck="false" placeholder="0.05" />
+                </label>
+                <label>
+                  Typical P (--typical-p) 1, 0.95
+                  <input id="typical-p" autocomplete="off" spellcheck="false" placeholder="1.0" />
+                </label>
+                <label>
+                  Repeat penalty (--repeat-penalty) 1, 1.1
+                  <input id="repeat-penalty" autocomplete="off" spellcheck="false" placeholder="1.1" />
+                </label>
+                <label>
+                  Presence penalty (--presence-penalty) 0, 0.2
+                  <input id="presence-penalty" autocomplete="off" spellcheck="false" placeholder="0" />
+                </label>
+                <label>
+                  Frequency penalty (--frequency-penalty) 0, 0.2
+                  <input id="frequency-penalty" autocomplete="off" spellcheck="false" placeholder="0" />
+                </label>
+              </div>
+            </details>
+
+            <details id="speculative-options" class="option-group collapsible-group" open>
+              <summary class="option-group-heading">
+                <h3>Speculative Decoding</h3>
+              </summary>
+              <label class="checkbox-label compact-toggle">
+                <input id="enable-speculative-options" type="checkbox" />
+                Use
+              </label>
+              <div class="form-grid advanced-grid">
+                <label>
+                  Spec type none, draft-mtp, ngram-mod
+                  <select id="spec-type">
+                    <option value="">Default</option>
+                    <option value="none">none</option>
+                    <option value="draft-simple">draft-simple</option>
+                    <option value="draft-eagle3">draft-eagle3</option>
+                    <option value="draft-mtp">draft-mtp</option>
+                    <option value="ngram-simple">ngram-simple</option>
+                    <option value="ngram-map-k">ngram-map-k</option>
+                    <option value="ngram-map-k4v">ngram-map-k4v</option>
+                    <option value="ngram-mod">ngram-mod</option>
+                    <option value="ngram-cache">ngram-cache</option>
+                    <option value="draft-mtp,ngram-mod">draft-mtp,ngram-mod</option>
+                  </select>
+                </label>
+                <label>
+                  Draft max 0, 2, 4
+                  <input id="spec-draft-n-max" type="number" min="0" step="1" />
+                </label>
+                <label>
+                  Draft min 0, 1, 2
+                  <input id="spec-draft-n-min" type="number" min="0" step="1" />
+                </label>
+                <label>
+                  Draft p split 0.10, 0.25
+                  <input id="spec-draft-p-split" autocomplete="off" spellcheck="false" placeholder="0.10" />
+                </label>
+                <label>
+                  Draft p min 0.50, 0.75
+                  <input id="spec-draft-p-min" autocomplete="off" spellcheck="false" placeholder="0.75" />
+                </label>
+                <label>
+                  Ngram match 0, 24, 32
+                  <input id="spec-ngram-mod-n-match" type="number" min="0" step="1" />
+                </label>
+                <label>
+                  Ngram min 0, 48, 64
+                  <input id="spec-ngram-mod-n-min" type="number" min="0" step="1" />
+                </label>
+                <label>
+                  Ngram max 0, 64, 128
+                  <input id="spec-ngram-mod-n-max" type="number" min="0" step="1" />
+                </label>
+              </div>
+            </details>
+
+            <details id="reasoning-options" class="option-group collapsible-group" open>
+              <summary class="option-group-heading">
+                <h3>Chat & Reasoning</h3>
+              </summary>
+              <label class="checkbox-label compact-toggle">
+                <input id="enable-reasoning-options" type="checkbox" />
+                Use
+              </label>
+              <div class="form-grid advanced-grid">
+                <label>
+                  Reasoning (-rea) auto, on, off
+                  <select id="reasoning">
+                    <option value="">Default</option>
+                    <option value="off">off</option>
+                    <option value="on">on</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+                <label>
+                  Reasoning format none, deepseek
+                  <select id="reasoning-format">
+                    <option value="">Default</option>
+                    <option value="none">none</option>
+                    <option value="deepseek">deepseek</option>
+                    <option value="deepseek-legacy">deepseek-legacy</option>
+                  </select>
+                </label>
+                <label>
+                  Reason budget -1, 0, 1024
+                  <input id="reasoning-budget" autocomplete="off" spellcheck="false" placeholder="-1" />
+                </label>
+              </div>
+              <label class="checkbox-label">
+                <input id="preserve-thinking" type="checkbox" />
+                Preserve thinking
+              </label>
+              <label>
+                Chat template kwargs
+                <textarea id="chat-template-kwargs" rows="2" spellcheck="false" placeholder='{"preserve_thinking": true}'></textarea>
+              </label>
+            </details>
+
+            <details id="multimodal-options" class="option-group collapsible-group" open>
+              <summary class="option-group-heading">
+                <h3>Multimodal</h3>
+              </summary>
+              <label class="checkbox-label compact-toggle">
+                <input id="enable-multimodal-options" type="checkbox" />
+                Use
+              </label>
+              <div class="path-row">
+                <label>
+                  mmproj (-mm) mmproj-F16.gguf
+                  <input id="mmproj" autocomplete="off" spellcheck="false" placeholder="mmproj-F16.gguf" />
+                </label>
+                <button id="pick-mmproj" type="button">Browse</button>
+              </div>
+            </details>
+          </details>
+
+          <div class="toggle-row">
+            <label class="checkbox-label">
+              <input id="tools-all" type="checkbox" />
+              Tools all
+            </label>
+            <label class="checkbox-label">
+              <input id="jinja" type="checkbox" />
+              Jinja
+            </label>
+            <label class="checkbox-label">
+              <input id="embeddings" type="checkbox" />
+              Embeddings
+            </label>
+            <label class="checkbox-label">
+              <input id="verbose" type="checkbox" />
+              Verbose
+            </label>
+          </div>
+
+          <label>
+            Extra args --temp 0.7
+            <input id="extra-args" autocomplete="off" spellcheck="false" placeholder="--flash-attn --cache-type-k q8_0" />
+          </label>
+
+          <div class="command-box">
+            <div class="command-header">
+              <span>Command</span>
+              <button id="copy-command" type="button">Copy</button>
+            </div>
+            <pre id="command-preview"></pre>
+            <div id="command-helper" class="command-helper"></div>
+          </div>
+
+          <div class="server-meta">
+            <p id="server-status">Idle</p>
+            <p id="server-log"></p>
+          </div>
+        </section>
+
+        <div
+          id="workspace-resizer"
+          class="workspace-resizer"
+          role="separator"
+          aria-label="Resize panes"
+          aria-orientation="vertical"
+          tabindex="0"
+        ></div>
+
+        <section class="right-stack">
+          <details class="panel collapsible-panel catalog-panel" aria-labelledby="models-heading" open>
+            <summary class="panel-heading">
+              <div>
+                <p class="eyebrow">catalog</p>
+                <h2 id="models-heading">Models</h2>
+              </div>
+            </summary>
+
+            <div class="collapsible-content">
+              <div class="button-row">
+                <button id="rescan-models" type="button">Rescan</button>
+                <button id="add-gguf" type="button">Add GGUF</button>
+              </div>
+
+              <div class="path-row">
+                <label>
+                  Directory
+                  <input id="model-dir" autocomplete="off" spellcheck="false" />
+                </label>
+                <button id="pick-model-dir" type="button">Browse</button>
+              </div>
+
+              <div id="model-loading" class="loading-bar" role="progressbar" aria-label="Loading models" hidden>
+                <span></span>
+              </div>
+
+              <div id="model-list" class="model-list"></div>
+            </div>
+          </details>
+
+          <details class="panel collapsible-panel" aria-labelledby="download-heading" open>
+            <summary class="panel-heading">
+              <div>
+                <p class="eyebrow">hub</p>
+                <h2 id="download-heading">Download</h2>
+              </div>
+            </summary>
+
+            <div class="collapsible-content">
+              <div class="button-row panel-action-row">
+                <button id="download-model" class="primary" type="button">Download</button>
+              </div>
+
+            <div class="hf-discovery">
+              <div class="hf-search-row">
+                <label>
+                  Search Hugging Face
+                  <input id="hf-model-search" autocomplete="off" spellcheck="false" placeholder="qwen gguf, llama instruct, mistral..." />
+                </label>
+                <button id="hf-search-models" type="button">Search</button>
+              </div>
+              <div id="hf-model-sort-tabs" class="segmented-control" aria-label="Hugging Face model lists">
+                <button type="button" data-hf-sort="trending" aria-pressed="true">Trending</button>
+                <button type="button" data-hf-sort="updated" aria-pressed="false">Recent</button>
+                <button type="button" data-hf-sort="downloads" aria-pressed="false">Downloads</button>
+              </div>
+              <div id="hf-model-status" class="hf-model-status">Search or choose a list.</div>
+              <div id="hf-model-results" class="hf-model-results"></div>
+            </div>
+
+            <div class="form-grid download-grid">
+              <label>
+                Repo
+                <input id="hf-repo" autocomplete="off" spellcheck="false" placeholder="bartowski/Qwen2.5-7B-Instruct-GGUF" />
+              </label>
+              <label>
+                Repo file
+                <select id="hf-file-select" disabled>
+                  <option value="">Manual / glob</option>
+                </select>
+              </label>
+              <label>
+                File or glob
+                <input id="hf-pattern" autocomplete="off" spellcheck="false" placeholder="*Q4_K_M.gguf" />
+              </label>
+              <label>
+                Revision
+                <input id="hf-revision" autocomplete="off" spellcheck="false" placeholder="main" />
+              </label>
+              <label>
+                Workers 1, 4, 8, 16
+                <input id="hf-workers" type="number" min="1" max="32" />
+              </label>
+            </div>
+
+            <div class="path-row">
+              <label>
+                Target
+                <input id="hf-target-dir" autocomplete="off" spellcheck="false" />
+              </label>
+              <button id="pick-download-dir" type="button">Browse</button>
+            </div>
+
+            <div class="download-options">
+              <label>
+                Token (optional)
+                <input id="hf-token" type="password" autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="checkbox-label">
+                <input id="hf-force" type="checkbox" />
+                Force
+              </label>
+            </div>
+
+            <pre id="download-output" class="terminal-output"></pre>
+            </div>
+          </details>
+
+          <details class="panel collapsible-panel" aria-labelledby="settings-heading" open>
+            <summary class="panel-heading">
+              <div>
+                <p class="eyebrow">paths</p>
+                <h2 id="settings-heading">Settings</h2>
+              </div>
+            </summary>
+
+            <div class="collapsible-content">
+              <div class="button-row panel-action-row">
+                <button id="save-settings" type="button">Save</button>
+              </div>
+
+              <div class="button-row panel-action-row">
+                <button id="reset-app-data" class="danger" type="button">Reset everything</button>
+              </div>
+
+            <div class="llama-install">
+              <div class="form-grid llama-install-grid">
+                <label>
+                  llama.cpp build
+                  <select id="llama-package">
+                    <option value="auto">CPU x64 auto</option>
+                    <option value="cpu">CPU x64</option>
+                    <option value="vulkan">Vulkan x64</option>
+                    <option value="cuda124">CUDA 12.4 x64</option>
+                    <option value="cuda133">CUDA 13.3 x64</option>
+                    <option value="hip">HIP Radeon x64</option>
+                    <option value="arm64">CPU ARM64</option>
+                  </select>
+                </label>
+                <label>
+                  Install folder
+                  <input id="llama-install-dir" autocomplete="off" spellcheck="false" placeholder="Default: ~/LocalLLM/llama.cpp" />
+                </label>
+              </div>
+              <div class="button-row">
+                <button id="install-llama-cpp" type="button">Install llama.cpp</button>
+              </div>
+              <pre id="llama-install-output" class="terminal-output compact-output"></pre>
+            </div>
+
+            <div class="path-row">
+              <label>
+                llama-server
+                <input id="llama-server-path" autocomplete="off" spellcheck="false" />
+              </label>
+              <button id="pick-server" type="button">Browse</button>
+            </div>
+
+            <div class="path-row">
+              <label>
+                llama-cli
+                <input id="llama-cli-path" autocomplete="off" spellcheck="false" />
+              </label>
+              <button id="pick-cli" type="button">Browse</button>
+            </div>
+            </div>
+          </details>
+        </section>
+      </section>
+      </section>
+
+      <section id="app-view-webui" class="app-view web-ui-view" role="tabpanel" aria-labelledby="app-tab-webui" hidden>
+        <div class="web-ui-browser">
+          <div class="web-ui-toolbar">
+            <span id="web-ui-url">Server offline</span>
+            <button id="reload-web-ui" type="button" disabled>Reload</button>
+          </div>
+          <iframe id="web-ui-frame" class="web-ui-frame" title="llama.cpp Web UI" src="about:blank" loading="lazy"></iframe>
+        </div>
+      </section>
+
+      <footer id="app-message" class="app-message">Ready</footer>
+    </main>
+  </body>
+</html>
