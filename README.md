@@ -7,6 +7,10 @@ LocalLLM is a lightweight Tauri desktop control panel for running
 `llama-server`, preview the launch command, save per-model presets, and open
 the local Web UI.
 
+## App Preview
+
+![LocalLLM app preview](docs/assets/app-preview.png)
+
 ## Features
 
 - Discover `llama-server`, `llama-cli`, `hf`, and `huggingface-cli` from `PATH`.
