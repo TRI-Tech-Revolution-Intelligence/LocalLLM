@@ -134,7 +134,7 @@ jobs:
 
   release:
     name: Upload to Release
-    needs: [build-linux, build-macos, build-windows]
+    needs: [build-windows]
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push'
