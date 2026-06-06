@@ -1,5 +1,7 @@
 # LocalLLM
 
+<img src="public/app-icon.png" alt="LocalLLM Athena icon" width="220">
+
 LocalLLM is a lightweight Tauri desktop control panel for running
 `llama.cpp` locally. It helps you discover GGUF models, configure
 `llama-server`, preview the launch command, save per-model presets, and open
