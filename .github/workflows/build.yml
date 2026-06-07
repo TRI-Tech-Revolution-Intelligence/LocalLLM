@@ -150,7 +150,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: '*'
-          merge-multiple: true
+          path: release-artifacts
 
       - name: Upload assets to release
         env:
@@ -165,6 +165,22 @@ jobs:
           fi
           echo "Uploading to tag: $TAG"
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
-          for f in *; do
-            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber
+
+          mapfile -d '' ASSETS < <(find release-artifacts -type f \( \
+            -name '*.AppImage' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.dmg' -o \
+            -name '*.msi' -o \
+            -name '*.exe' \
+          \) -print0)
+
+          if [ "${#ASSETS[@]}" -eq 0 ]; then
+            echo "No release assets were found."
+            find release-artifacts -maxdepth 4 -type f -print
+            exit 1
+          fi
+
+          for f in "${ASSETS[@]}"; do
+            gh release upload "$TAG" "$f" --clobber
           done
