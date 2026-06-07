@@ -283,6 +283,8 @@ textarea {
 }
 
 button {
+  position: relative;
+  overflow: hidden;
   min-height: 34px;
   border: 1px solid #b8c4ba;
   border-radius: 6px;
@@ -290,6 +292,44 @@ button {
   color: #18201c;
   background: #f9faf6;
   cursor: pointer;
+  isolation: isolate;
+}
+
+button::after {
+  content: "";
+  position: absolute;
+  left: var(--ripple-x, 50%);
+  top: var(--ripple-y, 50%);
+  z-index: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: currentColor;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0);
+}
+
+button.button-ripple::after {
+  animation: button-ripple 520ms ease-out;
+}
+
+@keyframes button-ripple {
+  0% {
+    opacity: 0.22;
+    transform: translate(-50%, -50%) scale(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.button-ripple::after {
+    animation: none;
+  }
 }
 
 button:hover:not(:disabled) {

@@ -398,11 +398,18 @@ async function run() {
     await expectValue(page, "#threads", "6", "profile selector hydrates chosen profile fields");
     await expectTextIncludes(page, "#command-preview", models[0].path, "profile command keeps current model");
     await expectTextIncludes(page, "#command-preview", "--threads 6", "command after profile selector");
+    const namedProfileLabel = await page.locator('#profile-select option[value="profile:0"]').textContent();
+    if (namedProfileLabel !== "Charlie profile") {
+      throw new Error(`named profile label should not include model name: ${namedProfileLabel}`);
+    }
 
     await page.locator("#model-select").selectOption(models[1].path);
     await delay(250);
     await expectValue(page, "#model-select", models[1].path, "dropdown selection before scan settles");
     await expectValue(page, "#profile-select", "profile:2", "model change resets to exclusive model profile");
+    await expectValue(page, "#threads", "0", "exclusive profile uses default threads");
+    await expectValue(page, "#batch-size", "2048", "exclusive profile uses default batch");
+    await expectValue(page, "#ubatch-size", "512", "exclusive profile uses default ubatch");
     await expectTextIncludes(page, "#command-preview", models[1].path, "command after dropdown selection");
     const bravoCommand = await page.locator("#command-preview").textContent();
     if (bravoCommand?.includes("--threads 6")) {
@@ -421,6 +428,17 @@ async function run() {
     await expectValue(page, "#threads", "6", "matching model profile auto-loads");
     await expectTextIncludes(page, "#command-preview", models[2].path, "command after row click");
     await expectTextIncludes(page, "#command-preview", "--threads 6", "command uses matching model profile");
+
+    await page.locator("#load-default-profile").click();
+    await delay(250);
+    await expectValue(page, "#profile-select", "default", "defaults button keeps default selected");
+    await expectValue(page, "#threads", "0", "defaults button resets threads");
+    await expectValue(page, "#batch-size", "2048", "defaults button resets batch");
+    await expectValue(page, "#ubatch-size", "512", "defaults button resets ubatch");
+    const defaultCommand = await page.locator("#command-preview").textContent();
+    if (defaultCommand?.includes("--threads 6")) {
+      throw new Error(`default profile should not keep saved profile threads: ${defaultCommand}`);
+    }
 
     await page.locator("#new-model-profile").click();
     await expectTextIncludes(page, "#profile-status", "New profile", "new profile mode");

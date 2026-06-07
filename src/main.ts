@@ -263,6 +263,32 @@ function bindSelectionGuard() {
   });
 }
 
+function bindButtonRipples() {
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!(event.target instanceof Element)) return;
+      const button = event.target.closest<HTMLButtonElement>("button");
+      if (!button || button.disabled) return;
+
+      const rect = button.getBoundingClientRect();
+      button.style.setProperty("--ripple-x", `${event.clientX - rect.left}px`);
+      button.style.setProperty("--ripple-y", `${event.clientY - rect.top}px`);
+      button.classList.remove("button-ripple");
+      void button.offsetWidth;
+      button.classList.add("button-ripple");
+    },
+    true,
+  );
+
+  document.addEventListener("animationend", (event) => {
+    if (event.animationName !== "button-ripple") return;
+    if (event.target instanceof HTMLButtonElement) {
+      event.target.classList.remove("button-ripple");
+    }
+  });
+}
+
 const appMessage = $("app-message");
 const workspace = $("workspace");
 const workspaceResizer = $("workspace-resizer");
@@ -288,6 +314,62 @@ const paneWidthStorageKey = "localllm-left-pane-width";
 const themes = new Set(["spotify", "sage", "graphite", "paper", "webmcp"]);
 const minLeftPaneWidth = 300;
 const minRightPaneWidth = 320;
+const defaultServerConfig: ServerConfig = {
+  modelPath: "",
+  host: "127.0.0.1",
+  port: 8080,
+  ctxSize: 4096,
+  gpuLayers: "",
+  threads: 0,
+  batchSize: 2048,
+  ubatchSize: 512,
+  parallel: -1,
+  enableKvCacheOptions: true,
+  cacheTypeK: "q8_0",
+  cacheTypeV: "q8_0",
+  flashAttention: "",
+  enableGpuMemoryOptions: false,
+  fit: "",
+  fitTarget: "",
+  fitCtx: 0,
+  devices: "",
+  tensorSplit: "",
+  enableSamplingOptions: false,
+  temperature: "",
+  topK: "",
+  topP: "",
+  minP: "",
+  typicalP: "",
+  repeatPenalty: "",
+  presencePenalty: "",
+  frequencyPenalty: "",
+  enableSpeculativeOptions: true,
+  specType: "",
+  specDraftNMax: 0,
+  specDraftNMin: 0,
+  specDraftPMin: "",
+  specDraftPSplit: "",
+  noMmap: false,
+  mlock: false,
+  specNgramModNMatch: 0,
+  specNgramModNMin: 0,
+  specNgramModNMax: 0,
+  noCpuMoe: 0,
+  enableReasoningOptions: true,
+  preserveThinking: true,
+  reasoningFormat: "",
+  reasoningBudget: "",
+  chatTemplateKwargs: preserveThinkingDefault,
+  reasoning: "",
+  enableMultimodalOptions: true,
+  mmproj: "",
+  embeddings: false,
+  toolsAll: false,
+  jinja: false,
+  verbose: false,
+  terminalMode: "visible",
+  extraArgs: "",
+};
 
 let config: AppConfig;
 let models: ModelEntry[] = [];
@@ -1203,6 +1285,10 @@ function serverForModel(server: ServerConfig, modelPath: string): ServerConfig {
   return { ...server, modelPath };
 }
 
+function defaultServerForModel(modelPath: string): ServerConfig {
+  return serverForModel(defaultServerConfig, modelPath);
+}
+
 function defaultProfileName(model: ModelEntry): string {
   return `${model.name} default`;
 }
@@ -1232,7 +1318,7 @@ async function ensureModelDefaultProfiles() {
     ...missingModels.map((model) => ({
       modelPath: model.path,
       name: defaultProfileName(model),
-      server: serverForModel(config.server, model.path),
+      server: defaultServerForModel(model.path),
     })),
   ];
 
@@ -1252,10 +1338,9 @@ function updateProfileSelector(selectedIndex: number) {
   selector.append(defaultOption);
 
   config.modelProfiles.forEach((profile, index) => {
-    const modelName = models.find((model) => model.path === profile.modelPath)?.name ?? profile.modelPath;
     const option = document.createElement("option");
     option.value = `profile:${index}`;
-    option.textContent = `${profile.name} - ${modelName}`;
+    option.textContent = profile.name || models.find((model) => model.path === profile.modelPath)?.name || profile.modelPath;
     selector.append(option);
   });
 
@@ -1331,9 +1416,9 @@ function applyProfileForSelectedModel(message?: string) {
 function loadDefaultProfileForSelectedModel() {
   const modelPath = activeModelPath || modelSelect.value;
   if (!modelPath) return;
-  selectedProfileOverrideIndex = null;
+  selectedProfileOverrideIndex = -1;
   creatingProfile = false;
-  hydrateServerUi(serverForModel(config.server, modelPath));
+  hydrateServerUi(defaultServerForModel(modelPath));
   updateProfileStatus();
   refreshPreviewNow();
   setMessage("Default profile loaded", "ok");
@@ -2117,6 +2202,7 @@ function showError(error: unknown) {
 async function boot() {
   initTheme();
   bindSelectionGuard();
+  bindButtonRipples();
   initPaneResize();
   bindEvents();
   setModelLoading("startup", true);
