@@ -74,13 +74,13 @@ jobs:
           if [ "${{ github.event_name }}" = "release" ]; then
             TAG="${{ github.event.release.tag_name }}"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+            TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
           else
             TAG="${{ github.ref_name }}"
           fi
           echo "Uploading macOS x86 assets to tag: $TAG"
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "$TAG" --generate-notes || gh release view "$TAG" >/dev/null
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
 
           mapfile -d '' ASSETS < <(find release-artifacts -type f -name '*.dmg' -print0)
@@ -92,5 +92,5 @@ jobs:
           fi
 
           for f in "${ASSETS[@]}"; do
-            gh release upload "$TAG" "$f" --clobber
+            gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY" --clobber
           done

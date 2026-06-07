@@ -1,6 +1,6 @@
 [package]
 name = "localllm"
-version = "0.1.4"
+version = "0.1.5"
 description = "Lightweight llama.cpp desktop controller"
 authors = ["you"]
 edition = "2021"
