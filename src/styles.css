@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --app-bg: #eef1ed;
   --topbar-bg: #f8faf5;
   --surface: #f8faf5;
@@ -54,6 +55,7 @@
 }
 
 :root[data-theme="spotify"] {
+  color-scheme: dark;
   --app-bg: #121212;
   --topbar-bg: #181818;
   --surface: #181818;
@@ -96,6 +98,7 @@
 }
 
 :root[data-theme="graphite"] {
+  color-scheme: dark;
   --app-bg: #111417;
   --topbar-bg: #171b20;
   --surface: #1b2026;
@@ -1282,6 +1285,19 @@ textarea {
   border-color: var(--border-strong);
   color: var(--text);
   background: var(--input-bg);
+  background-color: var(--input-bg);
+  caret-color: var(--text);
+}
+
+select option {
+  color: var(--text);
+  background-color: var(--input-bg);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--faint);
+  opacity: 1;
 }
 
 input:focus,
@@ -1435,6 +1451,47 @@ h3,
 
 .app-message[data-tone="error"] {
   color: var(--error-text);
+}
+
+.app-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.app-confirm {
+  display: grid;
+  gap: 12px;
+  width: min(480px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.app-confirm[data-kind="danger"],
+.app-confirm[data-kind="warning"] {
+  border-color: var(--warning-text);
+}
+
+.app-confirm h2 {
+  color: var(--heading);
+}
+
+.app-confirm p {
+  color: var(--muted);
+  white-space: pre-line;
+}
+
+.app-confirm-actions {
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
 :root[data-theme="webmcp"] button,

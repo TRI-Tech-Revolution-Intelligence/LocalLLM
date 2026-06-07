@@ -14,7 +14,7 @@ the local Web UI.
 ## Features
 
 - Discover `llama-server`, `llama-cli`, `hf`, and `huggingface-cli` from `PATH`.
-- Install supported `llama.cpp` Windows release builds from inside the app.
+- Install supported prebuilt `llama.cpp` Windows and Ubuntu Linux release assets from inside the app.
 - Save executable paths, model directory, manual GGUF entries, and server defaults.
 - Scan a model directory recursively for `.gguf` files.
 - Add manually selected `.gguf` files outside the model directory.
@@ -27,7 +27,7 @@ the local Web UI.
 - Save per-model presets and automatically return to the selected model's own preset when changing models.
 - Start, stop, and open the local llama.cpp server.
 - Run `llama-server` hidden in the background with log capture, or in a visible terminal.
-- Warn before starting when another background `llama-server.exe` is already running.
+- Warn before starting when another background `llama-server` process is already running.
 - Reset LocalLLM's saved settings/cache without deleting downloaded models.
 
 ## Runtime Requirements
@@ -38,12 +38,14 @@ You only need the tools you want LocalLLM to control:
 
 - `llama-server` is required to serve models.
 - `llama-cli` is optional.
-- `hf` or `huggingface-cli` is optional and only needed for Hugging Face downloads.
+- `hf` or `huggingface-cli` is optional for Hugging Face downloads. LocalLLM can use `curl` for a single selected file, but glob patterns such as `*.gguf` need the Hugging Face CLI.
 - GGUF model files.
 
-On Windows, the app can install a supported `llama.cpp` build from the
-Settings panel. You can also browse to your own `llama-server.exe` and
-`llama-cli.exe`.
+On Windows and Ubuntu-based Linux distributions, the app installs prebuilt
+official `llama.cpp` release assets from the Settings panel. Ubuntu Linux
+installs use the official `*-bin-ubuntu-*.tar.gz` packages and require `curl`
+and `tar` on `PATH`; LocalLLM does not compile `llama.cpp` from source. You can
+also browse to your own `llama-server` and `llama-cli` binaries.
 
 ## How To Use
 
@@ -75,25 +77,25 @@ Install:
 
 Install JavaScript dependencies:
 
-```powershell
+```sh
 npm install
 ```
 
 Run in development mode:
 
-```powershell
+```sh
 npm run tauri dev
 ```
 
 Run the frontend-only build:
 
-```powershell
+```sh
 npm run build
 ```
 
 Run the current UI regression test:
 
-```powershell
+```sh
 npm run test:model-selection
 ```
 
@@ -101,7 +103,7 @@ npm run test:model-selection
 
 Build for the current operating system:
 
-```powershell
+```sh
 npm run tauri build
 ```
 

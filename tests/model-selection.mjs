@@ -1,10 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
 const appPort = 14200 + Math.floor(Math.random() * 1000);
 const appUrl = `http://127.0.0.1:${appPort}/`;
-const chromePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
+const chromePath = findChromePath();
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const models = [
   model("a", "alpha.gguf", "\\\\?\\D:\\LMStudio\\models\\alpha.gguf", 1.7),
@@ -35,8 +38,9 @@ async function isAppUp() {
 async function ensureDevServer() {
   if (await isAppUp()) return undefined;
 
-  const child = spawn("cmd.exe", ["/c", "npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(appPort), "--strictPort"], {
-    cwd: new URL("..", import.meta.url),
+  const devServer = devServerCommand();
+  const child = spawn(devServer.command, devServer.args, {
+    cwd: repoRoot,
     shell: false,
     stdio: "pipe",
   });
@@ -61,6 +65,92 @@ async function expectTextIncludes(page, selector, expected, label) {
   const actual = await page.locator(selector).textContent();
   if (!actual?.includes(expected)) {
     throw new Error(`${label}: expected text to include ${expected}, got ${actual}`);
+  }
+}
+
+function devServerCommand() {
+  const npmArgs = ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(appPort), "--strictPort"];
+  if (process.platform === "win32") {
+    return { command: "cmd.exe", args: ["/c", "npm", ...npmArgs] };
+  }
+  return { command: "npm", args: npmArgs };
+}
+
+function commandWorks(command) {
+  const result = spawnSync(command, ["--version"], {
+    shell: false,
+    stdio: "ignore",
+  });
+  return result.status === 0;
+}
+
+function resolveCommandPath(command) {
+  const lookup = process.platform === "win32" ? "where" : "which";
+  const result = spawnSync(lookup, [command], {
+    encoding: "utf8",
+    shell: false,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const path = result.stdout?.split(/\r?\n/).find(Boolean)?.trim();
+  return path || (commandWorks(command) ? command : "");
+}
+
+function findChromePath() {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
+    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+  }
+
+  const candidates =
+    process.platform === "win32"
+      ? [
+          "C:/Program Files/Google/Chrome/Application/chrome.exe",
+          "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+          "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+        ]
+      : process.platform === "darwin"
+        ? [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+          ]
+        : [
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "microsoft-edge",
+            "/usr/bin/google-chrome",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+          ];
+
+  for (const candidate of candidates) {
+    if (candidate.includes("/") || candidate.includes("\\")) {
+      if (existsSync(candidate)) return candidate;
+    } else {
+      const resolved = resolveCommandPath(candidate);
+      if (resolved) return resolved;
+    }
+  }
+
+  throw new Error("Unable to find Chrome/Chromium. Set CHROME_PATH to run this test.");
+}
+
+async function expectDarkControl(page, selector, label) {
+  const colors = await page.locator(selector).evaluate((element) => {
+    const styles = window.getComputedStyle(element);
+    const rootStyles = window.getComputedStyle(document.documentElement);
+    return {
+      backgroundColor: styles.backgroundColor,
+      colorScheme: rootStyles.colorScheme,
+    };
+  });
+  if (colors.colorScheme !== "dark") {
+    throw new Error(`${label}: expected dark color-scheme, got ${colors.colorScheme}`);
+  }
+  if (colors.backgroundColor === "rgb(255, 255, 255)") {
+    throw new Error(`${label}: expected non-white background in dark theme`);
   }
 }
 
@@ -289,6 +379,17 @@ async function run() {
 
     await page.goto(appUrl);
     await page.locator("#model-select option").nth(2).waitFor({ state: "attached" });
+
+    await page.locator("#theme-select").selectOption("graphite");
+    await expectDarkControl(page, "#host", "dark theme text input");
+    await expectDarkControl(page, "#model-select", "dark theme select");
+    await page.locator("#reset-app-data").click();
+    await page.locator(".app-confirm").waitFor({ state: "visible" });
+    await expectTextIncludes(page, ".app-confirm", "Reset LocalLLM", "reset confirmation modal");
+    await expectDarkControl(page, ".app-confirm", "dark theme confirmation modal");
+    await page.locator(".app-confirm button", { hasText: "Cancel" }).click();
+    await page.locator(".app-confirm").waitFor({ state: "detached" });
+
     await expectValue(page, "#model-select", models[0].path, "initial selected model");
     await expectValue(page, "#profile-select", "profile:1", "initial model uses auto-created exclusive profile");
     await page.locator("#profile-select").selectOption("profile:0");

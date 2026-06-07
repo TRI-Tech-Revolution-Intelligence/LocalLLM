@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ask, open } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 
 type Tone = "info" | "ok" | "warn" | "error";
@@ -144,6 +144,7 @@ interface HfRepoFile {
 
 type HfModelSort = "trending" | "updated" | "downloads";
 type AppTab = "control" | "webui";
+type ConfirmKind = "warning" | "danger";
 
 interface HfModelSummary {
   id: string;
@@ -170,6 +171,14 @@ interface LlamaCppInstallResult {
   command: string;
   stdout: string;
   stderr: string;
+}
+
+interface ConfirmActionOptions {
+  title: string;
+  message: string;
+  okLabel: string;
+  cancelLabel: string;
+  kind?: ConfirmKind;
 }
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -337,6 +346,71 @@ function applyTheme(theme: string) {
 
 function initTheme() {
   applyTheme(window.localStorage.getItem(themeStorageKey) ?? "spotify");
+}
+
+function confirmAction(options: ConfirmActionOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overlay = document.createElement("div");
+    const modal = document.createElement("section");
+    const titleId = `confirm-title-${Date.now()}`;
+    const messageId = `confirm-message-${Date.now()}`;
+    const title = document.createElement("h2");
+    const message = document.createElement("p");
+    const actions = document.createElement("div");
+    const cancelButton = document.createElement("button");
+    const okButton = document.createElement("button");
+
+    overlay.className = "app-confirm-overlay";
+    modal.className = "app-confirm";
+    modal.dataset.kind = options.kind ?? "warning";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", titleId);
+    modal.setAttribute("aria-describedby", messageId);
+    modal.tabIndex = -1;
+
+    title.id = titleId;
+    title.textContent = options.title;
+    message.id = messageId;
+    message.textContent = options.message;
+
+    actions.className = "button-row app-confirm-actions";
+    cancelButton.type = "button";
+    cancelButton.textContent = options.cancelLabel;
+    okButton.type = "button";
+    okButton.className = options.kind === "danger" ? "danger" : "primary";
+    okButton.textContent = options.okLabel;
+
+    actions.append(cancelButton, okButton);
+    modal.append(title, message, actions);
+    overlay.append(modal);
+
+    let settled = false;
+    const close = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener("keydown", handleKeydown);
+      overlay.remove();
+      previousFocus?.focus({ preventScroll: true });
+      resolve(result);
+    };
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(false);
+      }
+    };
+
+    cancelButton.addEventListener("click", () => close(false));
+    okButton.addEventListener("click", () => close(true));
+    overlay.addEventListener("pointerdown", (event) => {
+      if (event.target === overlay) close(false);
+    });
+    document.addEventListener("keydown", handleKeydown);
+    document.body.append(overlay);
+    okButton.focus({ preventScroll: true });
+  });
 }
 
 function workspaceContentWidth(): number {
@@ -828,15 +902,14 @@ async function saveConfig(message = "Saved") {
 }
 
 async function resetEverything() {
-  const confirmed = await ask(
-    "Reset LocalLLM settings, presets, manual models, Hugging Face token, model cache, logs, theme, and layout?\n\nThis will not delete downloaded GGUF models or your llama.cpp install folder.",
-    {
-      title: "Reset LocalLLM",
-      kind: "warning",
-      okLabel: "Reset everything",
-      cancelLabel: "Cancel",
-    },
-  );
+  const confirmed = await confirmAction({
+    title: "Reset LocalLLM",
+    message:
+      "Reset LocalLLM settings, presets, manual models, Hugging Face token, model cache, logs, theme, and layout?\n\nThis will not delete downloaded GGUF models or your llama.cpp install folder.",
+    kind: "danger",
+    okLabel: "Reset everything",
+    cancelLabel: "Cancel",
+  });
   if (!confirmed) return;
 
   setMessage("Resetting LocalLLM data", "info");
@@ -1501,15 +1574,13 @@ async function startServer() {
       .map((process) => `PID ${process.pid}: ${process.commandLine || "llama-server.exe"}`)
       .join("\n");
     const extraCount = backgroundServers.length > 5 ? `\n...and ${backgroundServers.length - 5} more.` : "";
-    const closeExisting = await ask(
-      `Another llama-server process is already running in the background.\n\n${processList}${extraCount}\n\nDo you want LocalLLM to close the existing process before starting this server?\n\nChoose No to leave it running and start another llama-server.`,
-      {
-        title: "Another llama-server is running",
-        kind: "warning",
-        okLabel: "Yes, close it",
-        cancelLabel: "No, start another",
-      },
-    );
+    const closeExisting = await confirmAction({
+      title: "Another llama-server is running",
+      message: `Another llama-server process is already running in the background.\n\n${processList}${extraCount}\n\nDo you want LocalLLM to close the existing process before starting this server?\n\nChoose No to leave it running and start another llama-server.`,
+      kind: "warning",
+      okLabel: "Yes, close it",
+      cancelLabel: "No, start another",
+    });
     if (closeExisting) {
       setMessage("Closing existing llama-server", "info");
       await invoke("close_llama_servers", {

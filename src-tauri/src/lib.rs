@@ -27,6 +27,7 @@ struct ProcessState {
 
 struct ManagedServer {
     child: Child,
+    terminal_child: Option<Child>,
     pid: u32,
     command: String,
     url: String,
@@ -405,12 +406,6 @@ struct HfRepoFile {
     size_bytes: Option<u64>,
 }
 
-#[derive(Debug, Deserialize)]
-struct HfCliRepoFile {
-    path: Option<String>,
-    size: Option<u64>,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct HfModelSearchRequest {
@@ -461,6 +456,13 @@ struct HfCliModelSummary {
     library_name: Option<String>,
     #[serde(alias = "trendingScore")]
     trending_score: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HfApiModelFile {
+    rfilename: Option<String>,
+    path: Option<String>,
+    size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1346,26 +1348,6 @@ fn command_display(command: &str, args: &[String]) -> String {
         .join(" ")
 }
 
-fn masked_command_display(command: &str, args: &[String]) -> String {
-    let mut parts = vec![quote_arg(command)];
-    let mut mask_next = false;
-
-    for arg in args {
-        if mask_next {
-            parts.push("<token>".into());
-            mask_next = false;
-            continue;
-        }
-
-        parts.push(quote_arg(arg));
-        if arg == "--token" {
-            mask_next = true;
-        }
-    }
-
-    parts.join(" ")
-}
-
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1400,6 +1382,142 @@ fn configure_hidden_capture(command: &mut Command) {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+}
+
+#[cfg(not(windows))]
+fn find_terminal_emulator() -> Option<String> {
+    let mut candidates = Vec::new();
+    if let Ok(terminal) = env::var("TERMINAL") {
+        let terminal = terminal.trim();
+        if !terminal.is_empty() {
+            candidates.push(terminal.to_string());
+        }
+    }
+
+    candidates.extend(
+        [
+            "x-terminal-emulator",
+            "gnome-terminal",
+            "kgx",
+            "konsole",
+            "xfce4-terminal",
+            "mate-terminal",
+            "lxterminal",
+            "tilix",
+            "kitty",
+            "alacritty",
+            "wezterm",
+            "foot",
+            "xterm",
+            "uxterm",
+        ]
+        .into_iter()
+        .map(String::from),
+    );
+
+    let mut seen = HashSet::new();
+    for candidate in candidates {
+        if seen.insert(candidate.clone()) {
+            if let Some(path) = find_executable(&candidate) {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(not(windows))]
+fn resolve_terminal_emulator() -> Result<String, String> {
+    find_terminal_emulator().ok_or_else(|| {
+        "Show terminal is selected, but LocalLLM could not find a terminal emulator. Install x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, xterm, kitty, alacritty, wezterm, or set TERMINAL.".into()
+    })
+}
+
+#[cfg(not(windows))]
+fn terminal_name(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+        .to_ascii_lowercase()
+}
+
+#[cfg(not(windows))]
+fn append_log_terminal_shell_args(
+    args: &mut Vec<String>,
+    script: &str,
+    log_path: &Path,
+    pid: u32,
+    command_display: &str,
+) {
+    args.extend([
+        "sh".into(),
+        "-c".into(),
+        script.into(),
+        "sh".into(),
+        log_path.to_string_lossy().into_owned(),
+        pid.to_string(),
+        command_display.into(),
+    ]);
+}
+
+#[cfg(not(windows))]
+fn log_terminal_args(
+    terminal: &str,
+    log_path: &Path,
+    pid: u32,
+    command_display: &str,
+) -> Vec<String> {
+    let name = terminal_name(terminal);
+    let title = "LocalLLM llama-server";
+    let script = r#"printf '\033]0;LocalLLM llama-server\007'
+printf 'LocalLLM llama-server output\nCommand: %s\nLog: %s\n\n' "$3" "$1"
+tail -n +1 -f "$1" &
+tail_pid=$!
+while kill -0 "$2" 2>/dev/null; do
+  sleep 1
+done
+kill "$tail_pid" 2>/dev/null
+wait "$tail_pid" 2>/dev/null
+"#;
+
+    let mut args = match name.as_str() {
+        "gnome-terminal" | "kgx" | "mate-terminal" | "tilix" => {
+            vec!["--title".into(), title.into(), "--".into()]
+        }
+        "konsole" => vec!["--title".into(), title.into(), "-e".into()],
+        "xfce4-terminal" => vec!["--title".into(), title.into(), "-x".into()],
+        "lxterminal" => vec!["-t".into(), title.into(), "-e".into()],
+        "alacritty" => vec!["--title".into(), title.into(), "-e".into()],
+        "kitty" => vec!["--title".into(), title.into()],
+        "wezterm" => vec!["start".into(), "--".into()],
+        "foot" => vec!["-T".into(), title.into()],
+        "xterm" | "uxterm" => vec!["-T".into(), title.into(), "-e".into()],
+        _ => vec!["-e".into()],
+    };
+
+    append_log_terminal_shell_args(&mut args, script, log_path, pid, command_display);
+    args
+}
+
+#[cfg(not(windows))]
+fn spawn_log_terminal(
+    terminal: &str,
+    log_path: &Path,
+    pid: u32,
+    command_display: &str,
+) -> Result<Child, String> {
+    let mut command = Command::new(terminal);
+    command
+        .args(log_terminal_args(terminal, log_path, pid, command_display))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    command
+        .spawn()
+        .map_err(|error| format!("Unable to open terminal emulator {}: {error}", terminal))
 }
 
 fn managed_server_pid(state: &ProcessState) -> Option<u32> {
@@ -1461,9 +1579,70 @@ fn list_llama_server_processes(
 
 #[cfg(not(windows))]
 fn list_llama_server_processes(
-    _excluded_pid: Option<u32>,
+    excluded_pid: Option<u32>,
 ) -> Result<Vec<LlamaServerProcess>, String> {
-    Ok(Vec::new())
+    let output = Command::new("ps")
+        .args(["-eo", "pid=,comm=,args="])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|error| format!("Unable to inspect llama-server processes: {error}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "Unable to inspect llama-server processes".into()
+        } else {
+            format!("Unable to inspect llama-server processes: {stderr}")
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut processes = Vec::new();
+    for line in stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        let Some((pid, rest)) = split_once_whitespace(line) else {
+            continue;
+        };
+        let Some((command_name, command_line)) = split_once_whitespace(rest) else {
+            continue;
+        };
+        let Ok(pid) = pid.trim().parse::<u32>() else {
+            continue;
+        };
+        if Some(pid) == excluded_pid || pid == std::process::id() {
+            continue;
+        }
+
+        let executable_name = Path::new(command_name)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(command_name);
+        if executable_name != "llama-server" && executable_name != "llama-server.exe" {
+            continue;
+        }
+
+        processes.push(LlamaServerProcess {
+            pid,
+            command_line: command_line.trim().to_string(),
+        });
+    }
+    Ok(processes)
+}
+
+#[cfg(not(windows))]
+fn split_once_whitespace(input: &str) -> Option<(&str, &str)> {
+    let mut parts = input.trim_start().splitn(2, char::is_whitespace);
+    let left = parts.next()?.trim();
+    let right = parts.next()?.trim_start();
+    if left.is_empty() || right.is_empty() {
+        None
+    } else {
+        Some((left, right))
+    }
 }
 
 #[cfg(windows)]
@@ -1540,9 +1719,9 @@ fn download_model_blocking(request: DownloadRequest) -> Result<CommandOutput, St
     fs::create_dir_all(&target_dir)
         .map_err(|error| format!("Unable to create download directory {target_dir}: {error}"))?;
 
-    let cli = find_executable("hf")
-        .or_else(|| find_executable("huggingface-cli"))
-        .ok_or_else(|| "Unable to find hf or huggingface-cli on PATH".to_string())?;
+    let Some(cli) = find_executable("hf").or_else(|| find_executable("huggingface-cli")) else {
+        return download_model_with_curl(&request, repo_id, &target_dir);
+    };
 
     let mut args = vec!["download".into(), repo_id.into()];
     let pattern = request.pattern.trim();
@@ -1583,7 +1762,7 @@ fn download_model_blocking(request: DownloadRequest) -> Result<CommandOutput, St
     Ok(CommandOutput {
         success: output.status.success(),
         status_code: output.status.code(),
-        command: masked_command_display(&cli, &args),
+        command: masked_sensitive_command_display(&cli, &args),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     })
@@ -1599,47 +1778,22 @@ fn list_hf_repo_files_blocking(
         return Err("Enter a Hugging Face repository id".into());
     }
 
-    let cli = find_executable("hf")
-        .ok_or_else(|| "Unable to find hf on PATH to list Hugging Face files".to_string())?;
-    let mut args: Vec<String> = vec![
-        "models".into(),
-        "list".into(),
-        repo_id.into(),
-        "-R".into(),
-        "--json".into(),
-    ];
+    let url = hugging_face_model_api_url(repo_id, &revision);
+    let response = hugging_face_api_json(&url, &token)?;
+    let siblings = response
+        .get("siblings")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| "Hugging Face model response did not include file list".to_string())?;
 
-    if !revision.trim().is_empty() {
-        args.push("--revision".into());
-        args.push(revision.trim().into());
-    }
-    if !token.trim().is_empty() {
-        args.push("--token".into());
-        args.push(token.trim().into());
-    }
-
-    let mut command = Command::new(&cli);
-    configure_hidden_capture(&mut command);
-    let output = command
-        .args(&args)
-        .output()
-        .map_err(|error| format!("Unable to list Hugging Face files: {error}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            "Unable to list Hugging Face files".into()
-        } else {
-            stderr
-        });
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut files = serde_json::from_str::<Vec<HfCliRepoFile>>(&stdout)
+    let mut files = siblings
+        .iter()
+        .cloned()
+        .map(serde_json::from_value::<HfApiModelFile>)
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("Unable to parse Hugging Face file list: {error}"))?
         .into_iter()
         .filter_map(|file| {
-            let path = file.path?.trim().to_string();
+            let path = file.rfilename.or(file.path)?.trim().to_string();
             if path.is_empty() {
                 None
             } else {
@@ -1676,6 +1830,209 @@ fn percent_encode_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+fn percent_encode_path(value: &str) -> String {
+    value
+        .split('/')
+        .map(percent_encode_component)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn safe_relative_path(value: &str) -> Result<PathBuf, String> {
+    let mut path = PathBuf::new();
+    let mut has_component = false;
+
+    for component in value.split('/') {
+        if component.is_empty()
+            || component == "."
+            || component == ".."
+            || component.contains('\\')
+            || component.contains(':')
+        {
+            return Err(format!("Invalid Hugging Face file path '{value}'"));
+        }
+        path.push(component);
+        has_component = true;
+    }
+
+    if has_component {
+        Ok(path)
+    } else {
+        Err("Choose a Hugging Face file to download".into())
+    }
+}
+
+fn masked_sensitive_command_display(command: &str, args: &[String]) -> String {
+    let mut parts = vec![quote_arg(command)];
+    let mut mask_next = false;
+
+    for arg in args {
+        if mask_next {
+            parts.push("<token>".into());
+            mask_next = false;
+            continue;
+        }
+
+        if arg
+            .to_ascii_lowercase()
+            .starts_with("authorization: bearer ")
+        {
+            parts.push(quote_arg("Authorization: Bearer <token>"));
+        } else {
+            parts.push(quote_arg(arg));
+        }
+
+        if arg == "--token" {
+            mask_next = true;
+        }
+    }
+
+    parts.join(" ")
+}
+
+fn hugging_face_api_json(url: &str, token: &str) -> Result<serde_json::Value, String> {
+    let curl = find_executable("curl")
+        .ok_or_else(|| "Unable to find curl on PATH for Hugging Face API calls".to_string())?;
+    let mut args: Vec<String> = vec![
+        "-L".into(),
+        "--fail".into(),
+        "--silent".into(),
+        "--show-error".into(),
+        "-H".into(),
+        "User-Agent: LocalLLM".into(),
+    ];
+    if !token.trim().is_empty() {
+        args.push("-H".into());
+        args.push(format!("Authorization: Bearer {}", token.trim()));
+    }
+    args.push(url.into());
+
+    let mut command = Command::new(&curl);
+    configure_hidden_capture(&mut command);
+    let output = command
+        .args(&args)
+        .output()
+        .map_err(|error| format!("Unable to call Hugging Face API: {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "Unable to call Hugging Face API".into()
+        } else {
+            stderr
+        });
+    }
+
+    serde_json::from_slice::<serde_json::Value>(&output.stdout)
+        .map_err(|error| format!("Unable to parse Hugging Face API response: {error}"))
+}
+
+fn hugging_face_model_api_url(repo_id: &str, revision: &str) -> String {
+    let repo_path = percent_encode_path(repo_id);
+    let revision = revision.trim();
+    if revision.is_empty() {
+        format!("https://huggingface.co/api/models/{repo_path}")
+    } else {
+        format!(
+            "https://huggingface.co/api/models/{repo_path}/revision/{}",
+            percent_encode_component(revision)
+        )
+    }
+}
+
+fn hugging_face_resolve_url(repo_id: &str, revision: &str, file_path: &str) -> String {
+    let repo_path = percent_encode_path(repo_id);
+    let revision = if revision.trim().is_empty() {
+        "main".into()
+    } else {
+        percent_encode_component(revision.trim())
+    };
+    format!(
+        "https://huggingface.co/{repo_path}/resolve/{revision}/{}",
+        percent_encode_path(file_path)
+    )
+}
+
+fn has_glob_pattern(value: &str) -> bool {
+    value.contains('*') || value.contains('?')
+}
+
+fn download_model_with_curl(
+    request: &DownloadRequest,
+    repo_id: &str,
+    target_dir: &str,
+) -> Result<CommandOutput, String> {
+    let file_path = request.pattern.trim();
+    if file_path.is_empty() || has_glob_pattern(file_path) {
+        return Err(
+            "Unable to find hf or huggingface-cli on PATH. Install the Hugging Face CLI to download glob patterns, or select a specific file so LocalLLM can download it with curl."
+                .into(),
+        );
+    }
+
+    let relative_path = safe_relative_path(file_path)?;
+    let target_path = Path::new(target_dir).join(relative_path);
+    if target_path.exists() && !request.force {
+        return Ok(CommandOutput {
+            success: true,
+            status_code: Some(0),
+            command: "download skipped".into(),
+            stdout: format!(
+                "{} already exists. Enable Force download to overwrite it.",
+                target_path.display()
+            ),
+            stderr: String::new(),
+        });
+    }
+
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Unable to create download directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let curl = find_executable("curl")
+        .ok_or_else(|| "Unable to find curl on PATH for Hugging Face downloads".to_string())?;
+    let mut args: Vec<String> = vec![
+        "-L".into(),
+        "--fail".into(),
+        "--silent".into(),
+        "--show-error".into(),
+        "-H".into(),
+        "User-Agent: LocalLLM".into(),
+    ];
+    if !request.token.trim().is_empty() {
+        args.push("-H".into());
+        args.push(format!("Authorization: Bearer {}", request.token.trim()));
+    }
+    args.extend([
+        "-o".into(),
+        target_path.to_string_lossy().into_owned(),
+        hugging_face_resolve_url(repo_id, &request.revision, file_path),
+    ]);
+
+    let mut command = Command::new(&curl);
+    configure_hidden_capture(&mut command);
+    let output = command
+        .args(&args)
+        .output()
+        .map_err(|error| format!("Unable to download Hugging Face file: {error}"))?;
+
+    if !output.status.success() {
+        let _ = fs::remove_file(&target_path);
+    }
+
+    Ok(CommandOutput {
+        success: output.status.success(),
+        status_code: output.status.code(),
+        command: masked_sensitive_command_display(&curl, &args),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
 }
 
 fn list_hf_models_blocking(request: HfModelSearchRequest) -> Result<Vec<HfModelSummary>, String> {
@@ -1780,9 +2137,91 @@ fn github_api_json(url: &str) -> Result<serde_json::Value, String> {
         .map_err(|error| format!("Unable to parse GitHub API response: {error}"))
 }
 
-fn llama_cpp_asset_score(package: &str, name: &str) -> Option<u8> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LlamaCppAssetPlatform {
+    Windows,
+    UbuntuLinux,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LlamaCppAssetArch {
+    X64,
+    Arm64,
+    Other,
+}
+
+fn current_llama_cpp_asset_platform() -> LlamaCppAssetPlatform {
+    if cfg!(windows) {
+        LlamaCppAssetPlatform::Windows
+    } else if cfg!(target_os = "linux") {
+        LlamaCppAssetPlatform::UbuntuLinux
+    } else {
+        LlamaCppAssetPlatform::Unsupported
+    }
+}
+
+fn current_llama_cpp_asset_arch() -> LlamaCppAssetArch {
+    if cfg!(target_arch = "x86_64") {
+        LlamaCppAssetArch::X64
+    } else if cfg!(target_arch = "aarch64") {
+        LlamaCppAssetArch::Arm64
+    } else {
+        LlamaCppAssetArch::Other
+    }
+}
+
+fn llama_cpp_platform_label(platform: LlamaCppAssetPlatform) -> &'static str {
+    match platform {
+        LlamaCppAssetPlatform::Windows => "Windows",
+        LlamaCppAssetPlatform::UbuntuLinux => "Ubuntu Linux",
+        LlamaCppAssetPlatform::Unsupported => "this operating system",
+    }
+}
+
+fn llama_cpp_arch_token(arch: LlamaCppAssetArch) -> Option<&'static str> {
+    match arch {
+        LlamaCppAssetArch::X64 => Some("x64"),
+        LlamaCppAssetArch::Arm64 => Some("arm64"),
+        LlamaCppAssetArch::Other => None,
+    }
+}
+
+fn llama_cpp_asset_score(package: &str, name: &str) -> Option<u16> {
+    llama_cpp_asset_score_for(
+        package,
+        name,
+        current_llama_cpp_asset_platform(),
+        current_llama_cpp_asset_arch(),
+    )
+}
+
+fn llama_cpp_asset_score_for(
+    package: &str,
+    name: &str,
+    platform: LlamaCppAssetPlatform,
+    arch: LlamaCppAssetArch,
+) -> Option<u16> {
     let lower = name.to_ascii_lowercase();
-    if !lower.ends_with(".zip") || !lower.contains("-bin-win-") || lower.starts_with("cudart-") {
+    if lower.starts_with("cudart-") {
+        return None;
+    }
+
+    let package = if package.trim().is_empty() {
+        "auto"
+    } else {
+        package.trim()
+    };
+
+    match platform {
+        LlamaCppAssetPlatform::Windows => llama_cpp_windows_asset_score(package, &lower),
+        LlamaCppAssetPlatform::UbuntuLinux => llama_cpp_ubuntu_asset_score(package, &lower, arch),
+        LlamaCppAssetPlatform::Unsupported => None,
+    }
+}
+
+fn llama_cpp_windows_asset_score(package: &str, lower: &str) -> Option<u16> {
+    if !lower.ends_with(".zip") || !lower.contains("-bin-win-") {
         return None;
     }
 
@@ -1791,12 +2230,172 @@ fn llama_cpp_asset_score(package: &str, name: &str) -> Option<u8> {
         "arm64" if lower.contains("-cpu-arm64") => Some(100),
         "vulkan" if lower.contains("-vulkan-x64") => Some(100),
         "cuda124" if lower.contains("-cuda-12.4-x64") => Some(100),
-        "cuda133" if lower.contains("-cuda-13.3-x64") => Some(100),
-        "cuda" if lower.contains("-cuda-13.3-x64") => Some(100),
+        "cuda133" if lower.contains("-cuda-13.3-x64") => Some(110),
+        "cuda133" if lower.contains("-cuda-13.1-x64") => Some(100),
+        "cuda" if lower.contains("-cuda-13.3-x64") => Some(110),
+        "cuda" if lower.contains("-cuda-13.1-x64") => Some(100),
         "cuda" if lower.contains("-cuda-12.4-x64") => Some(90),
-        "hip" if lower.contains("-hip-radeon-x64") => Some(100),
+        "hip" | "rocm" if lower.contains("-hip-radeon-x64") => Some(100),
         _ => None,
     }
+}
+
+fn llama_cpp_ubuntu_asset_score(
+    package: &str,
+    lower: &str,
+    arch: LlamaCppAssetArch,
+) -> Option<u16> {
+    if !lower.contains("-bin-ubuntu-")
+        || !(lower.ends_with(".tar.gz")
+            || lower.ends_with(".tgz")
+            || lower.ends_with(".tar.xz")
+            || lower.ends_with(".txz")
+            || lower.ends_with(".zip"))
+    {
+        return None;
+    }
+
+    let current_arch = llama_cpp_arch_token(arch)?;
+    let contains_arch = |arch_token: &str| lower.contains(&format!("-{arch_token}."));
+    let is_cpu = |arch_token: &str| {
+        lower.contains(&format!("-bin-ubuntu-{arch_token}."))
+            && !lower.contains("-vulkan-")
+            && !lower.contains("-rocm-")
+            && !lower.contains("-openvino-")
+            && !lower.contains("-sycl-")
+            && !lower.contains("-cuda-")
+    };
+
+    match package {
+        "auto" | "cpu" if is_cpu(current_arch) => Some(100),
+        "arm64" if is_cpu("arm64") => Some(100),
+        "vulkan" if lower.contains("-vulkan-") && contains_arch(current_arch) => Some(100),
+        "hip" | "rocm" if lower.contains("-rocm-") && contains_arch("x64") => Some(100),
+        "openvino" if lower.contains("-openvino-") && contains_arch("x64") => Some(100),
+        "sycl" if lower.contains("-sycl-") && contains_arch("x64") => Some(100),
+        "cuda124" if lower.contains("-cuda-12.4-") && contains_arch("x64") => Some(100),
+        "cuda133" if lower.contains("-cuda-13.") && contains_arch("x64") => Some(100),
+        "cuda" if lower.contains("-cuda-13.") && contains_arch("x64") => Some(100),
+        "cuda" if lower.contains("-cuda-12.4-") && contains_arch("x64") => Some(90),
+        _ => None,
+    }
+}
+
+fn strip_archive_extension(name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    for suffix in [".tar.gz", ".tar.xz", ".tgz", ".txz", ".zip"] {
+        if lower.ends_with(suffix) {
+            return name[..name.len() - suffix.len()].to_string();
+        }
+    }
+    name.to_string()
+}
+
+fn sanitize_path_name(name: &str) -> String {
+    name.chars()
+        .map(|character| match character {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            _ => character,
+        })
+        .collect()
+}
+
+fn extract_llama_cpp_archive(
+    asset_name: &str,
+    archive_path: &Path,
+    install_dir: &Path,
+) -> Result<(String, String, String), String> {
+    let lower = asset_name.to_ascii_lowercase();
+    let (extract_command, extract_args): (String, Vec<String>) = if lower.ends_with(".zip") {
+        if cfg!(windows) {
+            (
+                "powershell".into(),
+                vec![
+                    "-NoProfile".into(),
+                    "-ExecutionPolicy".into(),
+                    "Bypass".into(),
+                    "-Command".into(),
+                    "& { param($ArchivePath, $DestinationPath) Expand-Archive -LiteralPath $ArchivePath -DestinationPath $DestinationPath -Force }".into(),
+                    archive_path.to_string_lossy().into_owned(),
+                    install_dir.to_string_lossy().into_owned(),
+                ],
+            )
+        } else {
+            let unzip = find_executable("unzip").ok_or_else(|| {
+                "Unable to find unzip on PATH to extract llama.cpp zip archive".to_string()
+            })?;
+            (
+                unzip,
+                vec![
+                    "-o".into(),
+                    archive_path.to_string_lossy().into_owned(),
+                    "-d".into(),
+                    install_dir.to_string_lossy().into_owned(),
+                ],
+            )
+        }
+    } else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+        let tar = find_executable("tar")
+            .ok_or_else(|| "Unable to find tar on PATH to extract llama.cpp archive".to_string())?;
+        (
+            tar,
+            vec![
+                "-xzf".into(),
+                archive_path.to_string_lossy().into_owned(),
+                "-C".into(),
+                install_dir.to_string_lossy().into_owned(),
+            ],
+        )
+    } else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
+        let tar = find_executable("tar")
+            .ok_or_else(|| "Unable to find tar on PATH to extract llama.cpp archive".to_string())?;
+        (
+            tar,
+            vec![
+                "-xJf".into(),
+                archive_path.to_string_lossy().into_owned(),
+                "-C".into(),
+                install_dir.to_string_lossy().into_owned(),
+            ],
+        )
+    } else {
+        return Err(format!(
+            "Unsupported llama.cpp archive format: {asset_name}"
+        ));
+    };
+
+    let mut extract = Command::new(&extract_command);
+    configure_hidden_capture(&mut extract);
+    let output = extract
+        .args(&extract_args)
+        .output()
+        .map_err(|error| format!("Unable to extract llama.cpp: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    Ok((
+        masked_sensitive_command_display(&extract_command, &extract_args),
+        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        String::from_utf8_lossy(&output.stderr).trim().to_string(),
+    ))
+}
+
+#[cfg(unix)]
+fn ensure_executable(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Unable to inspect {}: {error}", path.display()))?;
+    let mut permissions = metadata.permissions();
+    permissions.set_mode(permissions.mode() | 0o111);
+    fs::set_permissions(path, permissions)
+        .map_err(|error| format!("Unable to mark {} as executable: {error}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn ensure_executable(_path: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 fn find_file_recursive(dir: &Path, names: &[&str]) -> Option<PathBuf> {
@@ -1820,10 +2419,6 @@ fn find_file_recursive(dir: &Path, names: &[&str]) -> Option<PathBuf> {
 fn install_llama_cpp_blocking(
     request: LlamaCppInstallRequest,
 ) -> Result<LlamaCppInstallResult, String> {
-    if !cfg!(windows) {
-        return Err("Direct llama.cpp release installation is currently implemented for Windows zip assets.".into());
-    }
-
     let release =
         github_api_json("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest")?;
     let release_tag = release
@@ -1837,6 +2432,14 @@ fn install_llama_cpp_blocking(
     } else {
         package.as_str()
     };
+    let platform = current_llama_cpp_asset_platform();
+    if platform == LlamaCppAssetPlatform::Unsupported {
+        return Err(format!(
+            "Direct prebuilt llama.cpp release installation is not available for {}.",
+            llama_cpp_platform_label(platform)
+        ));
+    }
+
     let assets = release
         .get("assets")
         .and_then(|value| value.as_array())
@@ -1852,7 +2455,12 @@ fn install_llama_cpp_blocking(
         })
         .max_by_key(|(score, _, _)| *score)
         .map(|(_, name, url)| (name, url))
-        .ok_or_else(|| format!("No llama.cpp Windows asset found for package '{package}'"))?;
+        .ok_or_else(|| {
+            format!(
+                "No prebuilt llama.cpp {} release asset found for package '{package}'",
+                llama_cpp_platform_label(platform)
+            )
+        })?;
 
     let target_root = if request.target_dir.trim().is_empty() {
         PathBuf::from(default_llama_cpp_dir())
@@ -1866,14 +2474,7 @@ fn install_llama_cpp_blocking(
         )
     })?;
 
-    let install_name = asset_name
-        .trim_end_matches(".zip")
-        .chars()
-        .map(|character| match character {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
-            _ => character,
-        })
-        .collect::<String>();
+    let install_name = sanitize_path_name(&strip_archive_extension(&asset_name));
     let install_dir = target_root.join(format!("{release_tag}-{install_name}"));
     fs::create_dir_all(&install_dir).map_err(|error| {
         format!(
@@ -1907,41 +2508,39 @@ fn install_llama_cpp_blocking(
             .to_string());
     }
 
-    let mut expand = Command::new("powershell");
-    let expand_args: Vec<String> = vec![
-        "-NoProfile".into(),
-        "-ExecutionPolicy".into(),
-        "Bypass".into(),
-        "-Command".into(),
-        "& { param($ArchivePath, $DestinationPath) Expand-Archive -LiteralPath $ArchivePath -DestinationPath $DestinationPath -Force }".into(),
-        archive_path.to_string_lossy().into_owned(),
-        install_dir.to_string_lossy().into_owned(),
-    ];
-    configure_hidden_capture(&mut expand);
-    let expand_output = expand
-        .args(&expand_args)
-        .output()
-        .map_err(|error| format!("Unable to extract llama.cpp: {error}"))?;
-    if !expand_output.status.success() {
+    let extract_result = extract_llama_cpp_archive(&asset_name, &archive_path, &install_dir);
+    if extract_result.is_err() {
         let _ = fs::remove_file(&archive_path);
-        return Err(String::from_utf8_lossy(&expand_output.stderr)
-            .trim()
-            .to_string());
     }
+    let (extract_command, extract_stdout, extract_stderr) = extract_result?;
 
     let _ = fs::remove_file(&archive_path);
-    let server_path = find_file_recursive(&install_dir, &["llama-server.exe"])
-        .ok_or_else(|| "Installed archive did not contain llama-server.exe".to_string())?;
-    let cli_path = find_file_recursive(&install_dir, &["llama-cli.exe", "main.exe"])
-        .unwrap_or_else(|| server_path.clone());
+    let server_names = if cfg!(windows) {
+        vec!["llama-server.exe"]
+    } else {
+        vec!["llama-server", "llama-server.exe"]
+    };
+    let cli_names = if cfg!(windows) {
+        vec!["llama-cli.exe", "main.exe"]
+    } else {
+        vec!["llama-cli", "main", "llama-cli.exe", "main.exe"]
+    };
+    let server_path = find_file_recursive(&install_dir, &server_names).ok_or_else(|| {
+        format!(
+            "Installed archive did not contain {}",
+            server_names.join(" or ")
+        )
+    })?;
+    let cli_path =
+        find_file_recursive(&install_dir, &cli_names).unwrap_or_else(|| server_path.clone());
+    ensure_executable(&server_path)?;
+    ensure_executable(&cli_path)?;
 
     let stdout = [
         String::from_utf8_lossy(&download_output.stdout)
             .trim()
             .to_string(),
-        String::from_utf8_lossy(&expand_output.stdout)
-            .trim()
-            .to_string(),
+        extract_stdout,
     ]
     .into_iter()
     .filter(|value| !value.is_empty())
@@ -1951,9 +2550,7 @@ fn install_llama_cpp_blocking(
         String::from_utf8_lossy(&download_output.stderr)
             .trim()
             .to_string(),
-        String::from_utf8_lossy(&expand_output.stderr)
-            .trim()
-            .to_string(),
+        extract_stderr,
     ]
     .into_iter()
     .filter(|value| !value.is_empty())
@@ -1966,10 +2563,102 @@ fn install_llama_cpp_blocking(
         install_dir: install_dir.to_string_lossy().into_owned(),
         llama_server_path: server_path.to_string_lossy().into_owned(),
         llama_cli_path: cli_path.to_string_lossy().into_owned(),
-        command: masked_command_display(&curl, &download_args),
+        command: [
+            masked_sensitive_command_display(&curl, &download_args),
+            extract_command,
+        ]
+        .join("\n"),
         stdout,
         stderr,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scores_ubuntu_llama_cpp_assets() {
+        assert_eq!(
+            llama_cpp_asset_score_for(
+                "cpu",
+                "llama-b9360-bin-ubuntu-x64.tar.gz",
+                LlamaCppAssetPlatform::UbuntuLinux,
+                LlamaCppAssetArch::X64,
+            ),
+            Some(100)
+        );
+        assert_eq!(
+            llama_cpp_asset_score_for(
+                "vulkan",
+                "llama-b9360-bin-ubuntu-vulkan-x64.tar.gz",
+                LlamaCppAssetPlatform::UbuntuLinux,
+                LlamaCppAssetArch::X64,
+            ),
+            Some(100)
+        );
+        assert_eq!(
+            llama_cpp_asset_score_for(
+                "rocm",
+                "llama-b9360-bin-ubuntu-rocm-7.2-x64.tar.gz",
+                LlamaCppAssetPlatform::UbuntuLinux,
+                LlamaCppAssetArch::X64,
+            ),
+            Some(100)
+        );
+        assert_eq!(
+            llama_cpp_asset_score_for(
+                "cpu",
+                "llama-b9360-bin-ubuntu-rocm-7.2-x64.tar.gz",
+                LlamaCppAssetPlatform::UbuntuLinux,
+                LlamaCppAssetArch::X64,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn scores_windows_llama_cpp_assets() {
+        assert_eq!(
+            llama_cpp_asset_score_for(
+                "cuda133",
+                "llama-b9360-bin-win-cuda-13.1-x64.zip",
+                LlamaCppAssetPlatform::Windows,
+                LlamaCppAssetArch::X64,
+            ),
+            Some(100)
+        );
+        assert_eq!(
+            llama_cpp_asset_score_for(
+                "cpu",
+                "llama-b9360-bin-win-cpu-x64.zip",
+                LlamaCppAssetPlatform::Windows,
+                LlamaCppAssetArch::X64,
+            ),
+            Some(100)
+        );
+        assert_eq!(
+            llama_cpp_asset_score_for(
+                "cpu",
+                "cudart-llama-bin-win-cuda-13.1-x64.zip",
+                LlamaCppAssetPlatform::Windows,
+                LlamaCppAssetArch::X64,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn strips_archive_extensions() {
+        assert_eq!(
+            strip_archive_extension("llama-b9360-bin-ubuntu-x64.tar.gz"),
+            "llama-b9360-bin-ubuntu-x64"
+        );
+        assert_eq!(
+            strip_archive_extension("llama-b9360-bin-win-cpu-x64.zip"),
+            "llama-b9360-bin-win-cpu-x64"
+        );
+    }
 }
 
 #[tauri::command]
@@ -2117,6 +2806,10 @@ fn stop_managed_server(state: &ProcessState, background_only: bool) -> Result<()
     }
 
     if let Some(mut server) = guard.take() {
+        if let Some(mut terminal_child) = server.terminal_child.take() {
+            let _ = terminal_child.kill();
+            let _ = terminal_child.wait();
+        }
         let _ = server.child.kill();
         let _ = server.child.wait();
     }
@@ -2148,6 +2841,12 @@ fn start_server(
     let command = command_display(&executable, &args);
     let log_path = log_path(&app)?;
     let show_terminal = visible_terminal_requested(&config.terminal_mode);
+    #[cfg(not(windows))]
+    let terminal_emulator = if show_terminal {
+        Some(resolve_terminal_emulator()?)
+    } else {
+        None
+    };
 
     let mut log = fs::OpenOptions::new()
         .create(true)
@@ -2157,16 +2856,18 @@ fn start_server(
     writeln!(log, "\n=== LocalLLM start {} ===\n{command}", now_unix())
         .map_err(|error| format!("Unable to write server log header: {error}"))?;
     if show_terminal {
-        writeln!(
-            log,
+        let launch_note = if cfg!(windows) {
             "Launch mode: visible terminal; live stdout/stderr are shown in the terminal window."
-        )
-        .map_err(|error| format!("Unable to write server log header: {error}"))?;
+        } else {
+            "Launch mode: visible terminal; live stdout/stderr are captured to the log and mirrored in a terminal window."
+        };
+        writeln!(log, "{launch_note}")
+            .map_err(|error| format!("Unable to write server log header: {error}"))?;
     }
 
     let mut server_command = Command::new(&executable);
     server_command.args(&args);
-    if show_terminal {
+    if show_terminal && cfg!(windows) {
         configure_visible_terminal(&mut server_command);
     } else {
         let err_log = log
@@ -2199,6 +2900,22 @@ fn start_server(
         ));
     }
 
+    #[cfg(not(windows))]
+    let terminal_child = if let Some(terminal) = terminal_emulator.as_deref() {
+        match spawn_log_terminal(terminal, &log_path, child.id(), &command) {
+            Ok(child) => Some(child),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(windows)]
+    let terminal_child = None;
+
     let host = if config.host.trim().is_empty() {
         "127.0.0.1"
     } else {
@@ -2209,12 +2926,13 @@ fn start_server(
     let managed = ManagedServer {
         pid: child.id(),
         child,
+        terminal_child,
         command,
         url,
         model_path: config.model_path,
         log_path: log_path.to_string_lossy().into_owned(),
         started_at: now_unix(),
-        background: !show_terminal,
+        background: !show_terminal || !cfg!(windows),
     };
     let status = running_status(&managed);
     *guard = Some(managed);

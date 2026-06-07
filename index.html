@@ -573,15 +573,17 @@
             <div class="llama-install">
               <div class="form-grid llama-install-grid">
                 <label>
-                  llama.cpp build
+                  llama.cpp prebuilt package
                   <select id="llama-package">
-                    <option value="auto">CPU x64 auto</option>
-                    <option value="cpu">CPU x64</option>
-                    <option value="vulkan">Vulkan x64</option>
-                    <option value="cuda124">CUDA 12.4 x64</option>
-                    <option value="cuda133">CUDA 13.3 x64</option>
-                    <option value="hip">HIP Radeon x64</option>
-                    <option value="arm64">CPU ARM64</option>
+                    <option value="auto">Ubuntu/Windows CPU auto</option>
+                    <option value="cpu">Ubuntu/Windows CPU current arch</option>
+                    <option value="vulkan">Ubuntu/Windows Vulkan</option>
+                    <option value="rocm">Ubuntu ROCm/HIP x64</option>
+                    <option value="openvino">Ubuntu OpenVINO x64</option>
+                    <option value="cuda124">Windows CUDA 12.4 x64</option>
+                    <option value="cuda133">Windows CUDA 13.x x64</option>
+                    <option value="hip">Windows HIP Radeon x64</option>
+                    <option value="arm64">Ubuntu/Windows CPU ARM64</option>
                   </select>
                 </label>
                 <label>
@@ -590,7 +592,7 @@
                 </label>
               </div>
               <div class="button-row">
-                <button id="install-llama-cpp" type="button">Install llama.cpp</button>
+                <button id="install-llama-cpp" type="button">Install prebuilt llama.cpp</button>
               </div>
               <pre id="llama-install-output" class="terminal-output compact-output"></pre>
             </div>
