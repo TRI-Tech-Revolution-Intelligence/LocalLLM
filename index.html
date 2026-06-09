@@ -38,6 +38,7 @@
 
       <nav class="app-tabs" role="tablist" aria-label="Application views">
         <button id="app-tab-control" class="app-tab-button" type="button" role="tab" aria-selected="true" aria-controls="app-view-control" data-app-tab="control">Control</button>
+        <button id="app-tab-benchmark" class="app-tab-button" type="button" role="tab" aria-selected="false" aria-controls="app-view-benchmark" data-app-tab="benchmark">Benchmark</button>
         <button id="app-tab-webui" class="app-tab-button" type="button" role="tab" aria-selected="false" aria-controls="app-view-webui" data-app-tab="webui" disabled>Web UI</button>
       </nav>
 
@@ -195,6 +196,28 @@
                 Use
               </label>
               <div class="form-grid advanced-grid">
+                <div class="advanced-section-title">Device & offload</div>
+                <label>
+                  Device (--device) auto, CUDA0, Vulkan0
+                  <input id="device" autocomplete="off" spellcheck="false" placeholder="CUDA0,Vulkan0" />
+                </label>
+                <label>
+                  KV offload (--kv-offload)
+                  <select id="kv-offload">
+                    <option value="">Default</option>
+                    <option value="on">on</option>
+                    <option value="off">off</option>
+                  </select>
+                </label>
+                <label>
+                  Op offload (--op-offload)
+                  <select id="op-offload">
+                    <option value="">Default</option>
+                    <option value="on">on</option>
+                    <option value="off">off</option>
+                  </select>
+                </label>
+                <div class="advanced-section-title">Fit</div>
                 <label>
                   Fit (-fit) on, off
                   <select id="fit">
@@ -211,20 +234,40 @@
                   Fit ctx (-fitc) 0, 4096, 8192
                   <input id="fit-ctx" type="number" min="0" step="512" />
                 </label>
+                <div class="advanced-section-title">Split</div>
                 <label>
-                  Devices (--devices) auto, CUDA0, Vulkan0
-                  <input id="devices" autocomplete="off" spellcheck="false" placeholder="CUDA0,Vulkan0" />
+                  Split mode (-sm)
+                  <select id="split-mode">
+                    <option value="">Default</option>
+                    <option value="none">none</option>
+                    <option value="layer">layer</option>
+                    <option value="row">row</option>
+                    <option value="tensor">tensor</option>
+                  </select>
                 </label>
                 <label>
                   Tensor split (--tensor-split) 1,1 / 3,1
                   <input id="tensor-split" autocomplete="off" spellcheck="false" placeholder="1,1" />
                 </label>
                 <label>
+                  Main GPU (--main-gpu)
+                  <input id="main-gpu" autocomplete="off" spellcheck="false" placeholder="0" />
+                </label>
+                <div class="advanced-section-title">CPU & memory</div>
+                <label>
                   N CPU MoE (-ncmoe) 0, 1, 8, 30
                   <input id="no-cpu-moe" type="number" min="0" step="1" />
                 </label>
               </div>
               <div class="toggle-row">
+                <label class="checkbox-label">
+                  <input id="cpu-moe" type="checkbox" />
+                  CPU MoE (--cpu-moe)
+                </label>
+                <label class="checkbox-label">
+                  <input id="no-host" type="checkbox" />
+                  No host (--no-host)
+                </label>
                 <label class="checkbox-label">
                   <input id="no-mmap" type="checkbox" />
                   No mmap
@@ -616,6 +659,143 @@
           </details>
         </section>
       </section>
+      </section>
+
+      <section id="app-view-benchmark" class="app-view benchmark-view" role="tabpanel" aria-labelledby="app-tab-benchmark" hidden>
+        <section class="panel benchmark-panel" aria-labelledby="benchmark-heading">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">llama-server</p>
+              <h2 id="benchmark-heading">Benchmark</h2>
+            </div>
+            <div class="button-row">
+              <button id="save-benchmark-settings" type="button">Save</button>
+              <button id="run-benchmark" class="primary" type="button">Run</button>
+            </div>
+          </div>
+
+          <div id="benchmark-status" class="benchmark-status">Server offline</div>
+
+          <div class="form-grid benchmark-grid">
+            <label>
+              Scenario
+              <select id="benchmark-preset">
+                <option value="quick">Quick chat</option>
+                <option value="standard">Standard reasoning</option>
+                <option value="long">Long answer</option>
+              </select>
+            </label>
+            <label>
+              Runs
+              <input id="benchmark-run-count" type="number" min="1" max="10" step="1" />
+            </label>
+            <label>
+              Prefill sweep
+              <input id="benchmark-prefill-sweep" autocomplete="off" spellcheck="false" value="2048 / 4098 / 8192" readonly />
+            </label>
+            <label>
+              Generate tokens
+              <input id="benchmark-generate-tokens" type="number" min="16" max="4096" step="16" />
+            </label>
+            <label class="benchmark-prompt-field">
+              Generation prompt
+              <textarea id="benchmark-prompt" rows="4" spellcheck="true"></textarea>
+            </label>
+          </div>
+
+          <div class="benchmark-results" id="benchmark-results">
+            <div class="benchmark-result-card benchmark-score-card">
+              <span>Prefill 2K</span>
+              <strong id="benchmark-prefill-2048-tokens-per-second">-</strong>
+              <small>tokens/s</small>
+            </div>
+            <div class="benchmark-result-card benchmark-score-card">
+              <span>Prefill 4K</span>
+              <strong id="benchmark-prefill-4098-tokens-per-second">-</strong>
+              <small>tokens/s</small>
+            </div>
+            <div class="benchmark-result-card benchmark-score-card">
+              <span>Prefill 8K</span>
+              <strong id="benchmark-prefill-8192-tokens-per-second">-</strong>
+              <small>tokens/s</small>
+            </div>
+            <div class="benchmark-result-card benchmark-score-card">
+              <span>Generate</span>
+              <strong id="benchmark-generate-tokens-per-second">-</strong>
+              <small>tokens/s</small>
+            </div>
+            <div class="benchmark-result-card">
+              <span>Total time</span>
+              <strong id="benchmark-total-time">-</strong>
+              <small>s</small>
+            </div>
+            <div class="benchmark-result-card">
+              <span>Output</span>
+              <strong id="benchmark-output-tokens">-</strong>
+              <small>tokens</small>
+            </div>
+          </div>
+
+          <div class="benchmark-visual-grid">
+            <section class="benchmark-visual-panel" aria-labelledby="benchmark-bars-heading">
+              <h3 id="benchmark-bars-heading">Latency</h3>
+              <div id="benchmark-bars" class="benchmark-bars">
+                <div class="benchmark-bar-row">
+                  <span>Prefill 2K</span>
+                  <div><i style="width: 0%"></i></div>
+                  <b>-</b>
+                </div>
+                <div class="benchmark-bar-row">
+                  <span>Prefill 4K</span>
+                  <div><i style="width: 0%"></i></div>
+                  <b>-</b>
+                </div>
+                <div class="benchmark-bar-row">
+                  <span>Prefill 8K</span>
+                  <div><i style="width: 0%"></i></div>
+                  <b>-</b>
+                </div>
+                <div class="benchmark-bar-row">
+                  <span>Generate</span>
+                  <div><i style="width: 0%"></i></div>
+                  <b>-</b>
+                </div>
+                <div class="benchmark-bar-row">
+                  <span>Total</span>
+                  <div><i style="width: 0%"></i></div>
+                  <b>-</b>
+                </div>
+              </div>
+            </section>
+
+            <section class="benchmark-visual-panel" aria-labelledby="benchmark-chart-heading">
+              <h3 id="benchmark-chart-heading">Runs</h3>
+              <div id="benchmark-chart" class="benchmark-chart"></div>
+            </section>
+          </div>
+
+          <section class="benchmark-share-panel" aria-labelledby="benchmark-share-heading">
+            <div class="panel-heading compact-heading">
+              <h3 id="benchmark-share-heading">Share summary</h3>
+              <div class="button-row">
+                <button id="copy-benchmark-summary" type="button">Copy</button>
+                <button id="share-benchmark-twitter" type="button">Twitter/X</button>
+              </div>
+            </div>
+            <textarea id="benchmark-share-summary" rows="4" spellcheck="false" readonly></textarea>
+          </section>
+
+          <div class="benchmark-transcript">
+            <div>
+              <h3>Sample</h3>
+              <pre id="benchmark-sample" class="benchmark-sample"></pre>
+            </div>
+            <div>
+              <h3>Log</h3>
+              <pre id="benchmark-output" class="terminal-output benchmark-output"></pre>
+            </div>
+          </div>
+        </section>
       </section>
 
       <section id="app-view-webui" class="app-view web-ui-view" role="tabpanel" aria-labelledby="app-tab-webui" hidden>

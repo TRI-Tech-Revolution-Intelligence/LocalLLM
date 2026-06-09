@@ -68,6 +68,31 @@ async function expectTextIncludes(page, selector, expected, label) {
   }
 }
 
+async function waitTextIncludes(page, selector, expected, label) {
+  await page.waitForFunction(
+    ({ selector: targetSelector, expectedText }) =>
+      document.querySelector(targetSelector)?.textContent?.includes(expectedText),
+    { selector, expectedText: expected },
+    { timeout: 5000 },
+  );
+  await expectTextIncludes(page, selector, expected, label);
+}
+
+async function waitValueIncludes(page, selector, expected, label) {
+  await page.waitForFunction(
+    ({ selector: targetSelector, expectedText }) => {
+      const element = document.querySelector(targetSelector);
+      return element && "value" in element && String(element.value).includes(expectedText);
+    },
+    { selector, expectedText: expected },
+    { timeout: 5000 },
+  );
+  const actual = await page.locator(selector).inputValue();
+  if (!actual.includes(expected)) {
+    throw new Error(`${label}: expected value to include ${expected}, got ${actual}`);
+  }
+}
+
 function devServerCommand() {
   const npmArgs = ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(appPort), "--strictPort"];
   if (process.platform === "win32") {
@@ -182,7 +207,7 @@ async function run() {
         fit: "",
         fitTarget: "",
         fitCtx: 0,
-        devices: "",
+        device: "",
         tensorSplit: "",
         enableSamplingOptions: false,
         temperature: "",
@@ -221,6 +246,59 @@ async function run() {
         extraArgs: "",
       };
       window.isTauri = true;
+      const originalFetch = window.fetch.bind(window);
+      let prefillCallIndex = 0;
+      window.__benchmarkRequests = [];
+      window.fetch = async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/v1/models")) {
+          return new Response(JSON.stringify({ data: [{ id: "bench-model" }] }), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (url.endsWith("/completion")) {
+          const body = JSON.parse(init?.body || "{}");
+          window.__benchmarkRequests.push(body);
+          const isPrefill = String(body.prompt || "").includes("PREFILL_BENCHMARK_BLOCK");
+          const prefillTargets = [2048, 4098, 8192];
+          const prefillScores = [300, 240, 180];
+          if (isPrefill) {
+            const index = Math.min(prefillCallIndex, prefillTargets.length - 1);
+            prefillCallIndex += 1;
+            const promptTokens = prefillTargets[index];
+            const promptScore = prefillScores[index];
+            return new Response(
+              JSON.stringify({
+                content: "prefill checksum",
+                timings: {
+                  prompt_n: promptTokens,
+                  prompt_ms: (promptTokens / promptScore) * 1000,
+                  prompt_per_second: promptScore,
+                  predicted_n: 1,
+                  predicted_ms: 25,
+                  predicted_per_second: 40,
+                },
+              }),
+              { headers: { "content-type": "application/json" } },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              content: "Benchmark response from the loaded llama-server model.",
+              timings: {
+                prompt_n: 96,
+                prompt_ms: 300,
+                prompt_per_second: 320,
+                predicted_n: 64,
+                predicted_ms: 1600,
+                predicted_per_second: 40,
+              },
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        }
+        return originalFetch(input, init);
+      };
       window.__TAURI_INTERNALS__ = {
         transformCallback: () => Math.floor(Math.random() * 1_000_000),
         unregisterCallback: () => {},
@@ -231,6 +309,7 @@ async function run() {
               return {
                 llamaServerPath: "llama-server",
                 llamaCliPath: "llama-cli",
+                llamaBenchPath: "llama-bench",
                 modelDir: "C:/models",
                 hfToken: "",
                 manualModels: [],
@@ -247,6 +326,7 @@ async function run() {
               return {
                 llamaServer: "llama-server",
                 llamaCli: "llama-cli",
+                llamaBench: "llama-bench",
                 hfCli: "hf",
                 huggingfaceCli: null,
               };
@@ -259,13 +339,13 @@ async function run() {
               return modelFixtures;
             case "server_status":
               return {
-                running: false,
-                pid: null,
+                running: true,
+                pid: 4242,
                 command: "",
-                url: "",
-                modelPath: "",
+                url: "http://127.0.0.1:8080",
+                modelPath: modelFixtures[0].path,
                 logPath: "",
-                startedAt: null,
+                startedAt: 1,
               };
             case "preview_server_command":
               return [
@@ -281,8 +361,8 @@ async function run() {
                 args.config.enableKvCacheOptions && args.config.cacheTypeV
                   ? `-ctv ${args.config.cacheTypeV}`
                   : "",
-                args.config.enableGpuMemoryOptions && args.config.devices
-                  ? `--devices ${args.config.devices}`
+                args.config.enableGpuMemoryOptions && args.config.device
+                  ? `--device ${args.config.device}`
                   : "",
                 args.config.enableGpuMemoryOptions && args.config.tensorSplit
                   ? `--tensor-split ${args.config.tensorSplit}`
@@ -476,10 +556,10 @@ async function run() {
     );
 
     await page.locator("#enable-gpu-memory-options").check();
-    await page.locator("#devices").fill("CUDA0,Vulkan0");
+    await page.locator("#device").fill("CUDA0,Vulkan0");
     await page.locator("#tensor-split").fill("3,1");
     await delay(250);
-    await expectTextIncludes(page, "#command-preview", "--devices CUDA0,Vulkan0", "devices flag");
+    await expectTextIncludes(page, "#command-preview", "--device CUDA0,Vulkan0", "device flag");
     await expectTextIncludes(page, "#command-preview", "--tensor-split 3,1", "tensor-split flag");
 
     await page.locator("#enable-sampling-options").check();
@@ -512,6 +592,36 @@ async function run() {
       throw new Error(`preserve-thinking checkbox did not remove default kwargs: ${commandWithoutPreserve}`);
     }
 
+    await page.locator("#app-tab-benchmark").click();
+    await expectTextIncludes(page, "#app-view-benchmark", "Prefill", "benchmark prefill metric");
+    await expectTextIncludes(page, "#app-view-benchmark", "Generate", "benchmark generation metric");
+    await page.locator("#benchmark-run-count").fill("1");
+    await page.locator("#benchmark-generate-tokens").fill("64");
+    await page.locator("#run-benchmark").click();
+    await waitTextIncludes(page, "#benchmark-prefill-2048-tokens-per-second", "300", "2k prefill tokens per second");
+    await waitTextIncludes(page, "#benchmark-prefill-4098-tokens-per-second", "240", "4k prefill tokens per second");
+    await waitTextIncludes(page, "#benchmark-prefill-8192-tokens-per-second", "180", "8k prefill tokens per second");
+    await waitTextIncludes(page, "#benchmark-generate-tokens-per-second", "40", "generation tokens per second");
+    await waitTextIncludes(page, "#benchmark-output", "prefill 2048: 300", "benchmark log 2k prefill score");
+    await waitTextIncludes(page, "#benchmark-output", "prefill 4098: 240", "benchmark log 4k prefill score");
+    await waitTextIncludes(page, "#benchmark-output", "prefill 8192: 180", "benchmark log 8k prefill score");
+    await waitTextIncludes(page, "#benchmark-output", "generate 40", "benchmark log generation score");
+    await waitTextIncludes(page, "#benchmark-chart", "300", "benchmark chart 2k score");
+    await waitValueIncludes(page, "#benchmark-share-summary", "2K 300", "share summary 2k score");
+    await waitValueIncludes(page, "#benchmark-share-summary", "4K 240", "share summary 4k score");
+    await waitValueIncludes(page, "#benchmark-share-summary", "8K 180", "share summary 8k score");
+    const benchmarkRequests = await page.evaluate(() => window.__benchmarkRequests);
+    if (benchmarkRequests.length !== 4) {
+      throw new Error(`benchmark should perform 3 prefill calls + 1 generation call, got ${benchmarkRequests.length}`);
+    }
+    if (!benchmarkRequests.slice(0, 3).every((request) => request.n_predict === 1 && request.cache_prompt === false)) {
+      throw new Error(`prefill benchmark requests should use n_predict=1 and disable prompt cache: ${JSON.stringify(benchmarkRequests)}`);
+    }
+    if (benchmarkRequests[3].n_predict !== 64) {
+      throw new Error(`generation benchmark should use requested n_predict=64: ${JSON.stringify(benchmarkRequests[3])}`);
+    }
+    await page.locator("#app-tab-control").click();
+
     await page.locator("#hf-model-search").fill("qwen gguf");
     await page.locator("#hf-search-models").click();
     await page.locator(".hf-model-row", { hasText: "public/repo" }).click();
@@ -537,7 +647,11 @@ async function run() {
   }
 }
 
-run().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+run()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

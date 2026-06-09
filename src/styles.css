@@ -23,6 +23,7 @@
   --control-hover-border: #637767;
   --accent: #14684f;
   --accent-hover: #0f523e;
+  --accent-soft: var(--accent-hover);
   --accent-contrast: #ffffff;
   --success-text: #0f5138;
   --success-bg: #dff4e9;
@@ -39,6 +40,7 @@
   --code-muted: #a8bdb0;
   --code-helper: #aec6b6;
   --loading-bg: #dce5df;
+  --track-bg: var(--surface-muted);
   color: #18201c;
   background: #eef1ed;
   font-family:
@@ -603,6 +605,279 @@ h3 {
   display: none;
 }
 
+.benchmark-view {
+  overflow: auto;
+  padding: 12px;
+}
+
+.benchmark-panel {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.benchmark-status {
+  min-height: 34px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+  background: var(--surface-alt);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.benchmark-grid {
+  grid-template-columns: minmax(140px, 0.7fr) minmax(120px, 0.45fr) minmax(140px, 0.45fr) minmax(260px, 1.6fr);
+  align-items: stretch;
+}
+
+.benchmark-grid textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.benchmark-prompt-field {
+  grid-column: span 2;
+}
+
+.benchmark-results {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.benchmark-result-card {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  min-height: 124px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.benchmark-result-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.benchmark-result-card strong {
+  color: var(--heading);
+  font-size: 2.55rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-score-card strong {
+  color: var(--accent);
+}
+
+.benchmark-result-card small {
+  color: var(--subtle);
+  font-weight: 700;
+}
+
+.benchmark-visual-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.benchmark-visual-panel,
+.benchmark-transcript > div {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface-alt);
+}
+
+.benchmark-bars {
+  display: grid;
+  gap: 12px;
+}
+
+.benchmark-bar-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 10px;
+}
+
+.benchmark-bar-row span,
+.benchmark-bar-row b {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.benchmark-bar-row b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-bar-row div {
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--track-bg);
+}
+
+.benchmark-bar-row i {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-soft));
+  transition: width 620ms ease;
+}
+
+.benchmark-chart {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(56px, 1fr));
+  align-items: end;
+  min-height: 240px;
+  gap: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 38px 14px 14px;
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--border-soft) 42%, transparent) 1px, transparent 1px),
+    var(--input-bg);
+  background-size: 100% 25%;
+}
+
+.benchmark-chart-empty {
+  align-self: center;
+  width: 100%;
+  color: var(--subtle);
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.benchmark-chart-legend {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  color: var(--subtle);
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.benchmark-chart-column {
+  display: grid;
+  grid-template-rows: 28px minmax(0, 1fr) 20px 16px;
+  align-items: end;
+  justify-items: center;
+  height: 188px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-chart-column span {
+  align-self: start;
+  text-align: center;
+  line-height: 1.15;
+  color: var(--heading);
+  font-size: 0.82rem;
+}
+
+.benchmark-chart-column div {
+  display: flex;
+  align-items: end;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
+  overflow: hidden;
+}
+
+.benchmark-chart-column i {
+  display: block;
+  width: 100%;
+  min-height: 8px;
+  border-radius: 7px 7px 3px 3px;
+  animation: benchmark-bar-rise 780ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+.benchmark-chart-column.prefill i {
+  background: linear-gradient(180deg, var(--accent-soft), var(--accent-hover));
+}
+
+.benchmark-chart-column.generate i {
+  background: linear-gradient(180deg, var(--accent), var(--accent-hover));
+}
+
+.benchmark-chart-column b {
+  color: var(--heading-soft);
+  font-size: 0.82rem;
+}
+
+.benchmark-chart-column em {
+  color: var(--subtle);
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.benchmark-share-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface-alt);
+}
+
+.benchmark-share-panel textarea {
+  resize: vertical;
+}
+
+.benchmark-transcript {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.benchmark-sample {
+  min-height: 220px;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.benchmark-output {
+  min-height: 220px;
+  max-height: 300px;
+}
+
+@keyframes benchmark-bar-rise {
+  from {
+    height: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .benchmark-grid,
+  .benchmark-results,
+  .benchmark-visual-grid,
+  .benchmark-transcript {
+    grid-template-columns: 1fr;
+  }
+}
+
 #app-view-control label,
 #app-view-control .eyebrow,
 #app-view-control h2,
@@ -749,6 +1024,16 @@ body.resizing-panes {
 
 .advanced-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.advanced-section-title {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  color: var(--subtle);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .option-group {

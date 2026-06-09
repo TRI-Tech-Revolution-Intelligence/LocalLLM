@@ -10,7 +10,7 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -88,7 +88,8 @@ struct ServerConfig {
     ctx_size: u32,
     #[serde(default, deserialize_with = "deserialize_string_from_any")]
     gpu_layers: String,
-    devices: String,
+    #[serde(default, alias = "devices")]
+    device: String,
     threads: u32,
     batch_size: u32,
     ubatch_size: u32,
@@ -99,10 +100,17 @@ struct ServerConfig {
     cache_type_v: String,
     flash_attention: String,
     enable_gpu_memory_options: bool,
+    kv_offload: String,
+    no_host: bool,
+    op_offload: String,
     fit: String,
     fit_target: String,
     fit_ctx: u32,
     tensor_split: String,
+    split_mode: String,
+    #[serde(default, deserialize_with = "deserialize_string_from_any")]
+    main_gpu: String,
+    cpu_moe: bool,
     enable_sampling_options: bool,
     temperature: String,
     top_k: String,
@@ -152,7 +160,7 @@ impl Default for ServerConfig {
             port: 8080,
             ctx_size: 4096,
             gpu_layers: String::new(),
-            devices: String::new(),
+            device: String::new(),
             threads: 0,
             batch_size: 2048,
             ubatch_size: 512,
@@ -162,10 +170,16 @@ impl Default for ServerConfig {
             cache_type_v: "q8_0".into(),
             flash_attention: String::new(),
             enable_gpu_memory_options: false,
+            kv_offload: String::new(),
+            no_host: false,
+            op_offload: String::new(),
             fit: String::new(),
             fit_target: String::new(),
             fit_ctx: 0,
             tensor_split: String::new(),
+            split_mode: String::new(),
+            main_gpu: String::new(),
+            cpu_moe: false,
             enable_sampling_options: false,
             temperature: String::new(),
             top_k: String::new(),
@@ -210,6 +224,7 @@ impl Default for ServerConfig {
 struct AppConfig {
     llama_server_path: String,
     llama_cli_path: String,
+    llama_bench_path: String,
     model_dir: String,
     hf_token: String,
     manual_models: Vec<ModelEntry>,
@@ -228,6 +243,7 @@ impl Default for AppConfig {
 struct ToolDiscovery {
     llama_server: Option<String>,
     llama_cli: Option<String>,
+    llama_bench: Option<String>,
     hf_cli: Option<String>,
     huggingface_cli: Option<String>,
 }
@@ -242,7 +258,8 @@ struct ServerLaunchConfig {
     ctx_size: u32,
     #[serde(default, deserialize_with = "deserialize_string_from_any")]
     gpu_layers: String,
-    devices: String,
+    #[serde(default, alias = "devices")]
+    device: String,
     threads: u32,
     batch_size: u32,
     ubatch_size: u32,
@@ -253,10 +270,17 @@ struct ServerLaunchConfig {
     cache_type_v: String,
     flash_attention: String,
     enable_gpu_memory_options: bool,
+    kv_offload: String,
+    no_host: bool,
+    op_offload: String,
     fit: String,
     fit_target: String,
     fit_ctx: u32,
     tensor_split: String,
+    split_mode: String,
+    #[serde(default, deserialize_with = "deserialize_string_from_any")]
+    main_gpu: String,
+    cpu_moe: bool,
     enable_sampling_options: bool,
     temperature: String,
     top_k: String,
@@ -308,7 +332,7 @@ impl Default for ServerLaunchConfig {
             port: server.port,
             ctx_size: server.ctx_size,
             gpu_layers: server.gpu_layers,
-            devices: server.devices,
+            device: server.device,
             threads: server.threads,
             batch_size: server.batch_size,
             ubatch_size: server.ubatch_size,
@@ -318,10 +342,16 @@ impl Default for ServerLaunchConfig {
             cache_type_v: server.cache_type_v,
             flash_attention: server.flash_attention,
             enable_gpu_memory_options: server.enable_gpu_memory_options,
+            kv_offload: server.kv_offload,
+            no_host: server.no_host,
+            op_offload: server.op_offload,
             fit: server.fit,
             fit_target: server.fit_target,
             fit_ctx: server.fit_ctx,
             tensor_split: server.tensor_split,
+            split_mode: server.split_mode,
+            main_gpu: server.main_gpu,
+            cpu_moe: server.cpu_moe,
             enable_sampling_options: server.enable_sampling_options,
             temperature: server.temperature,
             top_k: server.top_k,
@@ -489,9 +519,83 @@ struct LlamaCppInstallResult {
     install_dir: String,
     llama_server_path: String,
     llama_cli_path: String,
+    llama_bench_path: String,
     command: String,
     stdout: String,
     stderr: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct BenchmarkRequest {
+    executable_path: String,
+    llama_cli_path: String,
+    llama_server_path: String,
+    model_path: String,
+    prompt_tokens: u32,
+    generation_tokens: u32,
+    repetitions: u32,
+    ctx_size: u32,
+    #[serde(default, deserialize_with = "deserialize_string_from_any")]
+    gpu_layers: String,
+    threads: u32,
+    batch_size: u32,
+    ubatch_size: u32,
+    enable_kv_cache_options: bool,
+    cache_type_k: String,
+    cache_type_v: String,
+    flash_attention: String,
+    enable_gpu_memory_options: bool,
+    #[serde(default, alias = "devices")]
+    device: String,
+    kv_offload: String,
+    no_host: bool,
+    op_offload: String,
+    tensor_split: String,
+    split_mode: String,
+    #[serde(default, deserialize_with = "deserialize_string_from_any")]
+    main_gpu: String,
+    cpu_moe: bool,
+    no_cpu_moe: u32,
+    no_mmap: bool,
+    mlock: bool,
+    extra_args: String,
+}
+
+impl Default for BenchmarkRequest {
+    fn default() -> Self {
+        Self {
+            executable_path: String::new(),
+            llama_cli_path: String::new(),
+            llama_server_path: String::new(),
+            model_path: String::new(),
+            prompt_tokens: 512,
+            generation_tokens: 128,
+            repetitions: 3,
+            ctx_size: 4096,
+            gpu_layers: String::new(),
+            threads: 0,
+            batch_size: 2048,
+            ubatch_size: 512,
+            enable_kv_cache_options: true,
+            cache_type_k: "q8_0".into(),
+            cache_type_v: "q8_0".into(),
+            flash_attention: String::new(),
+            enable_gpu_memory_options: false,
+            device: String::new(),
+            kv_offload: String::new(),
+            no_host: false,
+            op_offload: String::new(),
+            tensor_split: String::new(),
+            split_mode: String::new(),
+            main_gpu: String::new(),
+            cpu_moe: false,
+            no_cpu_moe: 0,
+            no_mmap: false,
+            mlock: false,
+            extra_args: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -537,6 +641,7 @@ fn default_config() -> AppConfig {
     AppConfig {
         llama_server_path: tools.llama_server.unwrap_or_default(),
         llama_cli_path: tools.llama_cli.unwrap_or_default(),
+        llama_bench_path: tools.llama_bench.unwrap_or_default(),
         model_dir: default_models_dir(),
         hf_token: String::new(),
         manual_models: Vec::new(),
@@ -553,6 +658,9 @@ fn normalize_config(mut config: AppConfig) -> AppConfig {
     }
     if config.llama_cli_path.trim().is_empty() {
         config.llama_cli_path = defaults.llama_cli_path;
+    }
+    if config.llama_bench_path.trim().is_empty() {
+        config.llama_bench_path = defaults.llama_bench_path;
     }
     if config.model_dir.trim().is_empty() {
         config.model_dir = defaults.model_dir;
@@ -648,6 +756,7 @@ fn discover_tools_impl() -> ToolDiscovery {
     ToolDiscovery {
         llama_server: find_executable("llama-server"),
         llama_cli: find_executable("llama-cli"),
+        llama_bench: find_executable("llama-bench"),
         hf_cli: find_executable("hf"),
         huggingface_cli: find_executable("huggingface-cli"),
     }
@@ -1216,19 +1325,29 @@ fn build_server_args(config: &ServerLaunchConfig) -> Result<Vec<String>, String>
         push_non_empty_arg(&mut args, "-fa", &config.flash_attention);
     }
     if config.enable_gpu_memory_options {
-        push_non_empty_arg(&mut args, "--devices", &config.devices);
+        push_toggle_arg(&mut args, &config.kv_offload, "--kv-offload", "--no-kv-offload");
+        push_non_empty_arg(&mut args, "--device", &config.device);
+        if config.no_host {
+            args.push("--no-host".into());
+        }
+        push_toggle_arg(&mut args, &config.op_offload, "--op-offload", "--no-op-offload");
         push_non_empty_arg(&mut args, "-fit", &config.fit);
         push_non_empty_arg(&mut args, "-fitt", &config.fit_target);
         if config.fit_ctx > 0 {
             args.push("-fitc".into());
             args.push(config.fit_ctx.to_string());
         }
+        push_non_empty_arg(&mut args, "-sm", &config.split_mode);
         push_non_empty_arg(&mut args, "--tensor-split", &config.tensor_split);
+        push_non_empty_arg(&mut args, "--main-gpu", &config.main_gpu);
         if config.no_mmap {
             args.push("--no-mmap".into());
         }
         if config.mlock {
             args.push("--mlock".into());
+        }
+        if config.cpu_moe {
+            args.push("--cpu-moe".into());
         }
         if config.no_cpu_moe > 0 {
             args.push("-ncmoe".into());
@@ -1317,6 +1436,14 @@ fn push_non_empty_arg(args: &mut Vec<String>, flag: &str, value: &str) {
     }
 }
 
+fn push_toggle_arg(args: &mut Vec<String>, value: &str, on_flag: &str, off_flag: &str) {
+    match value.trim() {
+        "on" => args.push(on_flag.into()),
+        "off" => args.push(off_flag.into()),
+        _ => {}
+    }
+}
+
 fn resolve_server_executable(path: &str) -> Result<String, String> {
     let path = path.trim();
     if !path.is_empty() {
@@ -1326,6 +1453,114 @@ fn resolve_server_executable(path: &str) -> Result<String, String> {
     find_executable("llama-server").ok_or_else(|| {
         "Unable to find llama-server. Set the llama-server executable path in Settings.".into()
     })
+}
+
+fn sibling_executable(path: &str, name: &str) -> Option<String> {
+    let path = Path::new(path.trim());
+    let dir = path.parent()?;
+    for executable in executable_names(name) {
+        let candidate = dir.join(executable);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+fn resolve_benchmark_executable(request: &BenchmarkRequest) -> Result<String, String> {
+    let path = request.executable_path.trim();
+    if !path.is_empty() {
+        return Ok(path.into());
+    }
+
+    sibling_executable(&request.llama_cli_path, "llama-bench")
+        .or_else(|| sibling_executable(&request.llama_server_path, "llama-bench"))
+        .or_else(|| find_executable("llama-bench"))
+        .ok_or_else(|| {
+            "Unable to find llama-bench. Set the llama-bench executable path in Benchmark.".into()
+        })
+}
+
+fn build_benchmark_args(request: &BenchmarkRequest) -> Result<Vec<String>, String> {
+    let model_path = request.model_path.trim();
+    if model_path.is_empty() {
+        return Err("Choose a GGUF model before running llama-bench".into());
+    }
+
+    let mut args = vec!["-m".into(), model_path.into()];
+
+    if request.prompt_tokens > 0 {
+        args.push("-p".into());
+        args.push(request.prompt_tokens.to_string());
+    }
+    if request.generation_tokens > 0 {
+        args.push("-n".into());
+        args.push(request.generation_tokens.to_string());
+    }
+    if request.repetitions > 0 {
+        args.push("-r".into());
+        args.push(request.repetitions.to_string());
+    }
+    if request.ctx_size > 0 {
+        args.push("-c".into());
+        args.push(request.ctx_size.to_string());
+    }
+    if request.batch_size > 0 {
+        args.push("-b".into());
+        args.push(request.batch_size.to_string());
+    }
+    if request.ubatch_size > 0 {
+        args.push("-ub".into());
+        args.push(request.ubatch_size.to_string());
+    }
+    if request.threads > 0 {
+        args.push("-t".into());
+        args.push(request.threads.to_string());
+    }
+    push_non_empty_arg(&mut args, "-ngl", &request.gpu_layers);
+
+    if request.enable_kv_cache_options {
+        push_non_empty_arg(&mut args, "-ctk", &request.cache_type_k);
+        push_non_empty_arg(&mut args, "-ctv", &request.cache_type_v);
+        push_non_empty_arg(&mut args, "-fa", &request.flash_attention);
+    }
+    if request.enable_gpu_memory_options {
+        push_toggle_arg(
+            &mut args,
+            &request.kv_offload,
+            "--kv-offload",
+            "--no-kv-offload",
+        );
+        push_non_empty_arg(&mut args, "--device", &request.device);
+        if request.no_host {
+            args.push("--no-host".into());
+        }
+        push_toggle_arg(
+            &mut args,
+            &request.op_offload,
+            "--op-offload",
+            "--no-op-offload",
+        );
+        push_non_empty_arg(&mut args, "-sm", &request.split_mode);
+        push_non_empty_arg(&mut args, "--tensor-split", &request.tensor_split);
+        push_non_empty_arg(&mut args, "--main-gpu", &request.main_gpu);
+        if request.no_mmap {
+            args.push("--no-mmap".into());
+        }
+        if request.mlock {
+            args.push("--mlock".into());
+        }
+        if request.cpu_moe {
+            args.push("--cpu-moe".into());
+        }
+        if request.no_cpu_moe > 0 {
+            args.push("-ncmoe".into());
+            args.push(request.no_cpu_moe.to_string());
+        }
+    }
+
+    args.extend(split_extra_args(&request.extra_args)?);
+    Ok(args)
 }
 
 fn quote_arg(arg: &str) -> String {
@@ -1767,6 +2002,26 @@ fn download_model_blocking(request: DownloadRequest) -> Result<CommandOutput, St
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     })
 }
+
+fn run_benchmark_blocking(request: BenchmarkRequest) -> Result<CommandOutput, String> {
+    let executable = resolve_benchmark_executable(&request)?;
+    let args = build_benchmark_args(&request)?;
+    let mut command = Command::new(&executable);
+    configure_hidden_capture(&mut command);
+    let output = command
+        .args(&args)
+        .output()
+        .map_err(|error| format!("Unable to run llama-bench: {error}"))?;
+
+    Ok(CommandOutput {
+        success: output.status.success(),
+        status_code: output.status.code(),
+        command: command_display(&executable, &args),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
 
 fn list_hf_repo_files_blocking(
     repo_id: String,
@@ -2525,6 +2780,11 @@ fn install_llama_cpp_blocking(
     } else {
         vec!["llama-cli", "main", "llama-cli.exe", "main.exe"]
     };
+    let bench_names = if cfg!(windows) {
+        vec!["llama-bench.exe"]
+    } else {
+        vec!["llama-bench", "llama-bench.exe"]
+    };
     let server_path = find_file_recursive(&install_dir, &server_names).ok_or_else(|| {
         format!(
             "Installed archive did not contain {}",
@@ -2533,8 +2793,12 @@ fn install_llama_cpp_blocking(
     })?;
     let cli_path =
         find_file_recursive(&install_dir, &cli_names).unwrap_or_else(|| server_path.clone());
+    let bench_path = find_file_recursive(&install_dir, &bench_names);
     ensure_executable(&server_path)?;
     ensure_executable(&cli_path)?;
+    if let Some(path) = &bench_path {
+        ensure_executable(path)?;
+    }
 
     let stdout = [
         String::from_utf8_lossy(&download_output.stdout)
@@ -2563,6 +2827,9 @@ fn install_llama_cpp_blocking(
         install_dir: install_dir.to_string_lossy().into_owned(),
         llama_server_path: server_path.to_string_lossy().into_owned(),
         llama_cli_path: cli_path.to_string_lossy().into_owned(),
+        llama_bench_path: bench_path
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
         command: [
             masked_sensitive_command_display(&curl, &download_args),
             extract_command,
@@ -2776,14 +3043,23 @@ fn preview_server_command(config: ServerLaunchConfig) -> Result<String, String> 
 }
 
 #[tauri::command]
-fn list_background_llama_servers(
-    state: State<'_, ProcessState>,
-) -> Result<Vec<LlamaServerProcess>, String> {
-    list_llama_server_processes(managed_server_pid(&state))
+async fn list_background_llama_servers(app: AppHandle) -> Result<Vec<LlamaServerProcess>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ProcessState>();
+        list_llama_server_processes(managed_server_pid(state.inner()))
+    })
+    .await
+    .map_err(|error| format!("Server process-list task failed: {error}"))?
 }
 
 #[tauri::command]
-fn close_llama_servers(pids: Vec<u32>) -> Result<(), String> {
+async fn close_llama_servers(pids: Vec<u32>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || close_llama_servers_blocking(pids))
+        .await
+        .map_err(|error| format!("Server close task failed: {error}"))?
+}
+
+fn close_llama_servers_blocking(pids: Vec<u32>) -> Result<(), String> {
     for pid in pids {
         if pid > 0 {
             kill_process_tree(pid)?;
@@ -2818,9 +3094,18 @@ fn stop_managed_server(state: &ProcessState, background_only: bool) -> Result<()
 }
 
 #[tauri::command]
-fn start_server(
-    app: AppHandle,
-    state: State<'_, ProcessState>,
+async fn start_server(app: AppHandle, config: ServerLaunchConfig) -> Result<ServerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ProcessState>();
+        start_server_blocking(&app, state.inner(), config)
+    })
+    .await
+    .map_err(|error| format!("Server start task failed: {error}"))?
+}
+
+fn start_server_blocking(
+    app: &AppHandle,
+    state: &ProcessState,
     config: ServerLaunchConfig,
 ) -> Result<ServerStatus, String> {
     let mut guard = state
@@ -2941,13 +3226,31 @@ fn start_server(
 }
 
 #[tauri::command]
-fn stop_server(state: State<'_, ProcessState>) -> Result<ServerStatus, String> {
-    stop_managed_server(&state, false)?;
+async fn stop_server(app: AppHandle) -> Result<ServerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ProcessState>();
+        stop_server_blocking(state.inner())
+    })
+    .await
+    .map_err(|error| format!("Server stop task failed: {error}"))?
+}
+
+fn stop_server_blocking(state: &ProcessState) -> Result<ServerStatus, String> {
+    stop_managed_server(state, false)?;
     Ok(stopped_status())
 }
 
 #[tauri::command]
-fn server_status(state: State<'_, ProcessState>) -> Result<ServerStatus, String> {
+async fn server_status(app: AppHandle) -> Result<ServerStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ProcessState>();
+        server_status_blocking(state.inner())
+    })
+    .await
+    .map_err(|error| format!("Server status task failed: {error}"))?
+}
+
+fn server_status_blocking(state: &ProcessState) -> Result<ServerStatus, String> {
     let mut guard = state
         .server
         .lock()
@@ -2969,6 +3272,13 @@ async fn download_model(request: DownloadRequest) -> Result<CommandOutput, Strin
     tauri::async_runtime::spawn_blocking(move || download_model_blocking(request))
         .await
         .map_err(|error| format!("Download task failed: {error}"))?
+}
+
+#[tauri::command]
+async fn run_benchmark(request: BenchmarkRequest) -> Result<CommandOutput, String> {
+    tauri::async_runtime::spawn_blocking(move || run_benchmark_blocking(request))
+        .await
+        .map_err(|error| format!("Benchmark task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -3028,6 +3338,7 @@ pub fn run() {
             stop_server,
             server_status,
             download_model,
+            run_benchmark,
             list_hf_repo_files,
             list_hf_models,
             install_llama_cpp,
