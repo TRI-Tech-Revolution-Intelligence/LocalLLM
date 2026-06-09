@@ -116,6 +116,22 @@ Windows bundles are written to:
 Linux and macOS builds should be produced on their native operating systems or
 with CI runners for those systems. Tauri desktop bundles are OS-specific.
 
+## CI Release Builds
+
+GitHub Actions builds each operating system and CPU architecture in a separate
+workflow:
+
+- Linux x64: `.github/workflows/build-linux-x64.yml`
+- Linux arm64: `.github/workflows/build-linux-arm64.yml`
+- Windows x64: `.github/workflows/build-windows-x64.yml`
+- Windows arm64: `.github/workflows/build-windows-arm64.yml`
+- macOS x64: `.github/workflows/build-macos-x64.yml`
+- macOS arm64: `.github/workflows/build-macos-arm64.yml`
+
+Tag, release, and manual release uploads prefix uploaded assets with the
+workflow platform, such as `windows-x64-` or `macos-arm64-`, so artifacts from
+different architectures stay separate.
+
 ## Linux Build Notes
 
 Install Node.js, Rust, and Tauri's Linux system dependencies. On Ubuntu/Debian,

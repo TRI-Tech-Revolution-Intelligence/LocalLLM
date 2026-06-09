@@ -1,9 +1,14 @@
-name: Build & Release macOS ARM
+name: Build macOS x64
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
   release:
     types: [published]
   workflow_dispatch:
@@ -18,11 +23,12 @@ permissions:
   contents: write
 
 jobs:
-  build-macos-arm:
-    name: Build macOS ARM
-    runs-on: macos-latest
+  build-macos-x64:
+    name: Build macOS x64
+    runs-on: macos-15-intel
     env:
-      RUST_TARGET: aarch64-apple-darwin
+      RUST_TARGET: x86_64-apple-darwin
+      ARTIFACT_NAME: macos-x64-bundles
     steps:
       - uses: actions/checkout@v4
 
@@ -39,22 +45,23 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build Tauri (macOS ARM)
+      - name: Build Tauri (macOS x64)
         run: npm run tauri build -- --target "$RUST_TARGET"
         env:
           MACOSX_DEPLOYMENT_TARGET: '11.0'
 
-      - name: Upload macOS ARM artifacts
+      - name: Upload macOS x64 artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-arm-bundles
+          name: ${{ env.ARTIFACT_NAME }}
+          if-no-files-found: error
           path: |
             src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/dmg/*.dmg
 
-  release-macos-arm:
-    name: Upload macOS ARM to Release
-    needs: [build-macos-arm]
+  release-macos-x64:
+    name: Upload macOS x64 to Release
+    needs: [build-macos-x64]
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
@@ -64,12 +71,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: 'macos-arm-bundles'
+          pattern: 'macos-x64-bundles'
           path: release-artifacts
 
       - name: Upload assets to release
         env:
           GH_TOKEN: ${{ github.token }}
+          UPLOAD_PREFIX: macos-x64
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             TAG="${{ github.event.release.tag_name }}"
@@ -78,7 +86,7 @@ jobs:
           else
             TAG="${{ github.ref_name }}"
           fi
-          echo "Uploading macOS ARM assets to tag: $TAG"
+          echo "Uploading macOS x64 assets to tag: $TAG"
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
@@ -86,11 +94,16 @@ jobs:
           mapfile -d '' ASSETS < <(find release-artifacts -type f -name '*.dmg' -print0)
 
           if [ "${#ASSETS[@]}" -eq 0 ]; then
-            echo "No macOS ARM release assets were found."
+            echo "No macOS x64 release assets were found."
             find release-artifacts -maxdepth 4 -type f -print
             exit 1
           fi
 
+          mkdir -p upload-assets
           for f in "${ASSETS[@]}"; do
+            cp "$f" "upload-assets/${UPLOAD_PREFIX}-$(basename "$f")"
+          done
+
+          for f in upload-assets/*; do
             gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY" --clobber
           done
