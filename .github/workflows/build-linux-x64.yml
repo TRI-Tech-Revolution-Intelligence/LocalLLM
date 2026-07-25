@@ -28,9 +28,10 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       RUST_TARGET: x86_64-unknown-linux-gnu
+      PI_TARGET_TRIPLE: x86_64-unknown-linux-gnu
       ARTIFACT_NAME: linux-x64-bundles
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -38,9 +39,12 @@ jobs:
           targets: ${{ env.RUST_TARGET }}
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '22.19.0'
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install Tauri Linux dependencies
         run: |
@@ -70,9 +74,6 @@ jobs:
             src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/deb/*.deb
             src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/rpm/*.rpm
             src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-            src-tauri/target/release/bundle/appimage/*.AppImage
 
   release-linux-x64:
     name: Upload Linux x64 to Release
