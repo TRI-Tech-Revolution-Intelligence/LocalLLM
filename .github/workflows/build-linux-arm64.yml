@@ -64,7 +64,7 @@ jobs:
         run: npm ci
 
       - name: Build Tauri (Linux arm64)
-        run: npm run tauri build -- --target "$RUST_TARGET"
+        run: npm run tauri build -- --target "$RUST_TARGET" --bundles deb,rpm
 
       - name: Upload Linux arm64 artifacts
         uses: actions/upload-artifact@v4
@@ -74,7 +74,6 @@ jobs:
           path: |
             src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/deb/*.deb
             src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/rpm/*.rpm
-            src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/appimage/*.AppImage
 
   release-linux-arm64:
     name: Upload Linux arm64 to Release
@@ -109,7 +108,6 @@ jobs:
           fi
 
           mapfile -d '' ASSETS < <(find release-artifacts -type f \( \
-            -name '*.AppImage' -o \
             -name '*.deb' -o \
             -name '*.rpm' \
           \) -print0)
