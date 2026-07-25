@@ -25,7 +25,7 @@ permissions:
 jobs:
   build-linux-x64:
     name: Build Linux x64
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     env:
       RUST_TARGET: x86_64-unknown-linux-gnu
       PI_TARGET_TRIPLE: x86_64-unknown-linux-gnu
@@ -56,6 +56,7 @@ jobs:
             libsoup-3.0-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
+            xdg-utils \
             build-essential \
             libssl-dev
 
