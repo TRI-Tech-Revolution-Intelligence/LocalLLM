@@ -1,328 +1,56 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-
-type Tone = "info" | "ok" | "warn" | "error";
-
-interface ModelEntry {
-  id: string;
-  name: string;
-  path: string;
-  source: string;
-  sizeBytes: number;
-  metadata?: GgufModelMetadata | null;
-}
-
-interface GgufModelMetadata {
-  architecture?: string | null;
-  contextLength?: number | null;
-  blockCount?: number | null;
-  embeddingLength?: number | null;
-  attentionHeadCount?: number | null;
-  attentionHeadCountKv?: number | null;
-  attentionKeyLength?: number | null;
-  attentionValueLength?: number | null;
-}
-
-interface ModelProfile {
-  modelPath: string;
-  name: string;
-  server: ServerConfig;
-}
-
-interface ServerConfig {
-  modelPath: string;
-  host: string;
-  port: number;
-  ctxSize: number;
-  gpuLayers: string;
-  threads: number;
-  batchSize: number;
-  ubatchSize: number;
-  parallel: number;
-  enableKvCacheOptions: boolean;
-  cacheTypeK: string;
-  cacheTypeV: string;
-  flashAttention: string;
-  enableGpuMemoryOptions: boolean;
-  kvOffload: string;
-  noHost: boolean;
-  opOffload: string;
-  fit: string;
-  fitTarget: string;
-  fitCtx: number;
-  device: string;
-  tensorSplit: string;
-  splitMode: string;
-  mainGpu: string;
-  cpuMoe: boolean;
-  enableSamplingOptions: boolean;
-  temperature: string;
-  topK: string;
-  topP: string;
-  minP: string;
-  typicalP: string;
-  repeatPenalty: string;
-  presencePenalty: string;
-  frequencyPenalty: string;
-  enableSpeculativeOptions: boolean;
-  specType: string;
-  specDraftNMax: number;
-  specDraftNMin: number;
-  specDraftPMin: string;
-  specDraftPSplit: string;
-  noMmap: boolean;
-  mlock: boolean;
-  specNgramModNMatch: number;
-  specNgramModNMin: number;
-  specNgramModNMax: number;
-  noCpuMoe: number;
-  enableReasoningOptions: boolean;
-  preserveThinking: boolean;
-  reasoningFormat: string;
-  reasoningBudget: string;
-  chatTemplateKwargs: string;
-  reasoning: string;
-  enableMultimodalOptions: boolean;
-  mmproj: string;
-  embeddings: boolean;
-  toolsAll: boolean;
-  jinja: boolean;
-  verbose: boolean;
-  terminalMode: string;
-  extraArgs: string;
-}
-
-interface AppConfig {
-  llamaServerPath: string;
-  llamaCliPath: string;
-  llamaBenchPath: string;
-  modelDir: string;
-  hfToken: string;
-  manualModels: ModelEntry[];
-  modelProfiles: ModelProfile[];
-  server: ServerConfig;
-}
-
-interface ToolDiscovery {
-  llamaServer: string | null;
-  llamaCli: string | null;
-  llamaBench: string | null;
-  hfCli: string | null;
-  huggingfaceCli: string | null;
-}
-
-interface ServerStatus {
-  running: boolean;
-  pid: number | null;
-  command: string;
-  url: string;
-  modelPath: string;
-  logPath: string;
-  startedAt: number | null;
-}
-
-interface CommandOutput {
-  success: boolean;
-  statusCode: number | null;
-  command: string;
-  stdout: string;
-  stderr: string;
-}
-
-interface LlamaServerProcess {
-  pid: number;
-  commandLine: string;
-}
-
-interface DownloadRequest {
-  repoId: string;
-  pattern: string;
-  revision: string;
-  targetDir: string;
-  token: string;
-  force: boolean;
-  maxWorkers: number;
-}
-
-interface HfRepoFile {
-  path: string;
-  sizeBytes: number | null;
-}
-
-type HfModelSort = "trending" | "updated" | "downloads";
-type AppTab = "control" | "benchmark" | "webui";
-type ConfirmKind = "warning" | "danger";
-type BenchmarkPreset = "quick" | "standard" | "long";
-
-interface HfModelSummary {
-  id: string;
-  downloads: number | null;
-  likes: number | null;
-  lastModified: string | null;
-  createdAt: string | null;
-  pipelineTag: string | null;
-  libraryName: string | null;
-  trendingScore: number | null;
-}
-
-interface LlamaCppInstallRequest {
-  package: string;
-  targetDir: string;
-}
-
-interface LlamaCppInstallResult {
-  releaseTag: string;
-  assetName: string;
-  installDir: string;
-  llamaServerPath: string;
-  llamaCliPath: string;
-  llamaBenchPath: string;
-  command: string;
-  stdout: string;
-  stderr: string;
-}
-
-interface ConfirmActionOptions {
-  title: string;
-  message: string;
-  okLabel: string;
-  cancelLabel: string;
-  kind?: ConfirmKind;
-}
-
-interface BenchmarkSettings {
-  preset: BenchmarkPreset;
-  runs: string;
-  generateTokens: string;
-  prompt: string;
-}
-
-interface BenchmarkPrefillResult {
-  targetTokens: number;
-  promptTokens: number;
-  promptMs: number;
-  tokensPerSecond: number;
-}
-
-interface BenchmarkRunResult {
-  index: number;
-  prefill: BenchmarkPrefillResult[];
-  generationTokens: number;
-  generationMs: number;
-  generationTokensPerSecond: number;
-  totalMs: number;
-  text: string;
-  error?: string;
-}
-
-const $ = <T extends HTMLElement>(id: string): T => {
-  const element = document.getElementById(id);
-  if (!element) {
-    throw new Error(`Missing element #${id}`);
-  }
-  return element as T;
-};
-
-const editableInputTypes = new Set(["email", "number", "password", "search", "tel", "text", "url"]);
-
-function isEditableTextbox(element: Element | null): element is HTMLInputElement | HTMLTextAreaElement {
-  if (element instanceof HTMLTextAreaElement) {
-    return !element.disabled && !element.readOnly;
-  }
-  if (element instanceof HTMLInputElement) {
-    return editableInputTypes.has(element.type) && !element.disabled && !element.readOnly;
-  }
-  return false;
-}
-
-function editableTextboxFromTarget(target: EventTarget | null): HTMLInputElement | HTMLTextAreaElement | null {
-  if (!(target instanceof Element)) return null;
-  const textbox = target.closest("input, textarea");
-  return isEditableTextbox(textbox) ? textbox : null;
-}
-
-function clearDocumentSelection() {
-  const selection = window.getSelection();
-  if (selection && !selection.isCollapsed) {
-    selection.removeAllRanges();
-  }
-}
-
-function clearActiveTextboxSelection() {
-  const activeElement = document.activeElement;
-  if (!isEditableTextbox(activeElement)) return;
-
-  const caretPosition = activeElement.value.length;
-  try {
-    activeElement.setSelectionRange(caretPosition, caretPosition);
-  } catch {
-    // Some editable input types, such as number, do not expose setSelectionRange.
-  }
-}
-
-function bindSelectionGuard() {
-  document.addEventListener("contextmenu", (event) => {
-    event.preventDefault();
-  });
-
-  document.addEventListener(
-    "pointerdown",
-    (event) => {
-      if (!editableTextboxFromTarget(event.target)) {
-        clearActiveTextboxSelection();
-        clearDocumentSelection();
-      }
-    },
-    true,
-  );
-
-  document.addEventListener("selectstart", (event) => {
-    if (editableTextboxFromTarget(event.target)) return;
-    event.preventDefault();
-    clearActiveTextboxSelection();
-    clearDocumentSelection();
-  });
-
-  document.addEventListener("selectionchange", () => {
-    if (isEditableTextbox(document.activeElement)) return;
-    clearDocumentSelection();
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "a") return;
-    if (editableTextboxFromTarget(event.target)) return;
-    event.preventDefault();
-    clearActiveTextboxSelection();
-    clearDocumentSelection();
-  });
-}
-
-function bindButtonRipples() {
-  document.addEventListener(
-    "pointerdown",
-    (event) => {
-      if (!(event.target instanceof Element)) return;
-      const button = event.target.closest<HTMLButtonElement>("button");
-      if (!button || button.disabled) return;
-
-      const rect = button.getBoundingClientRect();
-      button.style.setProperty("--ripple-x", `${event.clientX - rect.left}px`);
-      button.style.setProperty("--ripple-y", `${event.clientY - rect.top}px`);
-      button.classList.remove("button-ripple");
-      void button.offsetWidth;
-      button.classList.add("button-ripple");
-    },
-    true,
-  );
-
-  document.addEventListener("animationend", (event) => {
-    if (event.animationName !== "button-ripple") return;
-    if (event.target instanceof HTMLButtonElement) {
-      event.target.classList.remove("button-ripple");
-    }
-  });
-}
+import { initAgent } from "./agent";
+import {
+  agentAutoAcceptStorageKey,
+  agentAutoCompactStorageKey,
+  agentContextSummaryStorageKey,
+  agentGoalStorageKey,
+  agentMcpServersStorageKey,
+  agentModeStorageKey,
+  agentPermissionsStorageKey,
+  agentSkillsStorageKey,
+  agentSubagentsStorageKey,
+  agentTodosStorageKey,
+  agentYoloModeStorageKey,
+  benchmarkDefaultPrompt,
+  benchmarkPrefillTargets,
+  benchmarkSettingsStorageKey,
+  defaultServerConfig,
+  minLeftPaneWidth,
+  minRightPaneWidth,
+  paneWidthStorageKey,
+  preserveThinkingDefault,
+  themeStorageKey,
+  themes,
+} from "./constants";
+import { confirmAction } from "./confirm-dialog";
+import { $, bindButtonRipples, bindSelectionGuard } from "./dom";
+import { initWindowControls } from "./window-controls";
+import type {
+  AppConfig,
+  AppTab,
+  BenchmarkPrefillResult,
+  BenchmarkPreset,
+  BenchmarkRunResult,
+  BenchmarkSettings,
+  CommandOutput,
+  DownloadRequest,
+  GgufModelMetadata,
+  HfModelSort,
+  HfModelSummary,
+  HfRepoFile,
+  LlamaCppInstallRequest,
+  LlamaCppInstallResult,
+  LlamaServerProcess,
+  ModelEntry,
+  ModelProfile,
+  ServerConfig,
+  ServerStatus,
+  Tone,
+  ToolDiscovery,
+} from "./types";
 
 const appMessage = $("app-message");
 const workspace = $("workspace");
@@ -361,78 +89,6 @@ const downloadFileSelect = $("hf-file-select") as HTMLSelectElement;
 const hfModelResults = $("hf-model-results");
 const hfModelStatus = $("hf-model-status");
 const llamaInstallOutput = $("llama-install-output");
-const preserveThinkingDefault = '{"preserve_thinking": true}';
-const themeStorageKey = "localllm-theme";
-const paneWidthStorageKey = "localllm-left-pane-width";
-const benchmarkSettingsStorageKey = "localllm-benchmark-settings";
-const benchmarkDefaultPrompt =
-  "Write a concise field report about a local AI server benchmark. Include one bottleneck, one strength, and one practical tuning idea.";
-const benchmarkPrefillTargets = [2048, 4098, 8192];
-const themes = new Set(["spotify", "sage", "graphite", "paper", "webmcp"]);
-const minLeftPaneWidth = 300;
-const minRightPaneWidth = 320;
-const defaultServerConfig: ServerConfig = {
-  modelPath: "",
-  host: "127.0.0.1",
-  port: 8080,
-  ctxSize: 4096,
-  gpuLayers: "",
-  threads: 0,
-  batchSize: 2048,
-  ubatchSize: 512,
-  parallel: -1,
-  enableKvCacheOptions: true,
-  cacheTypeK: "q8_0",
-  cacheTypeV: "q8_0",
-  flashAttention: "",
-  enableGpuMemoryOptions: false,
-  kvOffload: "",
-  noHost: false,
-  opOffload: "",
-  fit: "",
-  fitTarget: "",
-  fitCtx: 0,
-  device: "",
-  tensorSplit: "",
-  splitMode: "",
-  mainGpu: "",
-  cpuMoe: false,
-  enableSamplingOptions: false,
-  temperature: "",
-  topK: "",
-  topP: "",
-  minP: "",
-  typicalP: "",
-  repeatPenalty: "",
-  presencePenalty: "",
-  frequencyPenalty: "",
-  enableSpeculativeOptions: true,
-  specType: "",
-  specDraftNMax: 0,
-  specDraftNMin: 0,
-  specDraftPMin: "",
-  specDraftPSplit: "",
-  noMmap: false,
-  mlock: false,
-  specNgramModNMatch: 0,
-  specNgramModNMin: 0,
-  specNgramModNMax: 0,
-  noCpuMoe: 0,
-  enableReasoningOptions: true,
-  preserveThinking: true,
-  reasoningFormat: "",
-  reasoningBudget: "",
-  chatTemplateKwargs: preserveThinkingDefault,
-  reasoning: "",
-  enableMultimodalOptions: true,
-  mmproj: "",
-  embeddings: false,
-  toolsAll: false,
-  jinja: false,
-  verbose: false,
-  terminalMode: "visible",
-  extraArgs: "",
-};
 
 let config: AppConfig;
 let models: ModelEntry[] = [];
@@ -494,71 +150,6 @@ function applyTheme(theme: string) {
 
 function initTheme() {
   applyTheme(window.localStorage.getItem(themeStorageKey) ?? "spotify");
-}
-
-function confirmAction(options: ConfirmActionOptions): Promise<boolean> {
-  return new Promise((resolve) => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const overlay = document.createElement("div");
-    const modal = document.createElement("section");
-    const titleId = `confirm-title-${Date.now()}`;
-    const messageId = `confirm-message-${Date.now()}`;
-    const title = document.createElement("h2");
-    const message = document.createElement("p");
-    const actions = document.createElement("div");
-    const cancelButton = document.createElement("button");
-    const okButton = document.createElement("button");
-
-    overlay.className = "app-confirm-overlay";
-    modal.className = "app-confirm";
-    modal.dataset.kind = options.kind ?? "warning";
-    modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-labelledby", titleId);
-    modal.setAttribute("aria-describedby", messageId);
-    modal.tabIndex = -1;
-
-    title.id = titleId;
-    title.textContent = options.title;
-    message.id = messageId;
-    message.textContent = options.message;
-
-    actions.className = "button-row app-confirm-actions";
-    cancelButton.type = "button";
-    cancelButton.textContent = options.cancelLabel;
-    okButton.type = "button";
-    okButton.className = options.kind === "danger" ? "danger" : "primary";
-    okButton.textContent = options.okLabel;
-
-    actions.append(cancelButton, okButton);
-    modal.append(title, message, actions);
-    overlay.append(modal);
-
-    let settled = false;
-    const close = (result: boolean) => {
-      if (settled) return;
-      settled = true;
-      document.removeEventListener("keydown", handleKeydown);
-      overlay.remove();
-      previousFocus?.focus({ preventScroll: true });
-      resolve(result);
-    };
-    const handleKeydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close(false);
-      }
-    };
-
-    cancelButton.addEventListener("click", () => close(false));
-    okButton.addEventListener("click", () => close(true));
-    overlay.addEventListener("pointerdown", (event) => {
-      if (event.target === overlay) close(false);
-    });
-    document.addEventListener("keydown", handleKeydown);
-    document.body.append(overlay);
-    okButton.focus({ preventScroll: true });
-  });
 }
 
 function workspaceContentWidth(): number {
@@ -1083,6 +674,17 @@ async function resetEverything() {
   window.localStorage.removeItem(themeStorageKey);
   window.localStorage.removeItem(paneWidthStorageKey);
   window.localStorage.removeItem(benchmarkSettingsStorageKey);
+  window.localStorage.removeItem(agentPermissionsStorageKey);
+  window.localStorage.removeItem(agentYoloModeStorageKey);
+  window.localStorage.removeItem(agentAutoAcceptStorageKey);
+  window.localStorage.removeItem(agentGoalStorageKey);
+  window.localStorage.removeItem(agentModeStorageKey);
+  window.localStorage.removeItem(agentTodosStorageKey);
+  window.localStorage.removeItem(agentSkillsStorageKey);
+  window.localStorage.removeItem(agentSubagentsStorageKey);
+  window.localStorage.removeItem(agentAutoCompactStorageKey);
+  window.localStorage.removeItem(agentContextSummaryStorageKey);
+  window.localStorage.removeItem(agentMcpServersStorageKey);
 
   models = [];
   activeModelPath = "";
@@ -2677,6 +2279,7 @@ function bindEvents() {
   $("share-benchmark-twitter").addEventListener("click", shareBenchmarkOnTwitter);
   $("app-tab-control").addEventListener("click", () => setAppTab("control"));
   $("app-tab-benchmark").addEventListener("click", () => setAppTab("benchmark"));
+  $("app-tab-agent").addEventListener("click", () => setAppTab("agent"));
   $("app-tab-webui").addEventListener("click", () => setAppTab("webui"));
   $("reload-web-ui").addEventListener("click", () => syncWebUiFrame(true));
   $("hf-search-models").addEventListener("click", () => loadHfModels().catch(showError));
@@ -2801,10 +2404,12 @@ function showError(error: unknown) {
 }
 
 async function boot() {
+  initWindowControls();
   initTheme();
   bindSelectionGuard();
   bindButtonRipples();
   initPaneResize();
+  initAgent();
   bindEvents();
   setModelLoading("startup", true);
   try {

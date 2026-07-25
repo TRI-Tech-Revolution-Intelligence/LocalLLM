@@ -1,23 +1,28 @@
 {
   "name": "localllm",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:pi-sidecar": "node scripts/build-pi-sidecar.mjs",
     "preview": "vite preview",
     "test:model-selection": "node tests/model-selection.mjs",
+    "test:profiles": "node tests/agent-profiles.mjs",
+    "test:ui": "node tests/ui-smoke.mjs",
+    "test": "npm run test:model-selection && npm run test:profiles",
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@earendil-works/pi-coding-agent": "^0.82.0",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-opener": "^2"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "playwright-core": "^1.60.0",
+    "@tauri-apps/cli": "^2.11.4",
+    "playwright-core": "^1.62.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3"
   }

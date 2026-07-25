@@ -29,6 +29,11 @@ the local Web UI.
 - Run `llama-server` hidden in the background with log capture, or in a visible terminal.
 - Warn before starting when another background `llama-server` process is already running.
 - Reset LocalLLM's saved settings/cache without deleting downloaded models.
+- Create, rename, duplicate, import, export, reset, default, and safely delete
+  versioned Agent profiles with per-profile workspace, instructions, goal,
+  reasoning, permissions, and execution limits.
+- Recover the previous valid configuration automatically when a staged config
+  write is interrupted or the newest file is malformed.
 
 ## Runtime Requirements
 
@@ -71,7 +76,7 @@ Useful controls:
 
 Install:
 
-- Node.js 20 or newer
+- Node.js 22.19 or newer (required by the bundled Pi development dependency)
 - Rust stable
 - Tauri prerequisites for your OS
 
@@ -96,8 +101,12 @@ npm run build
 Run the current UI regression test:
 
 ```sh
-npm run test:model-selection
+npm test
 ```
+
+Profile format, migration behavior, dependency decisions, and compatibility
+notes are documented in
+[`docs/profile-and-dependency-migration.md`](docs/profile-and-dependency-migration.md).
 
 ## Build Release
 

@@ -11,6 +11,29 @@
 
   <body>
     <main class="app-shell">
+      <div id="window-titlebar" class="window-titlebar" data-tauri-drag-region>
+        <div class="window-titlebar-app" data-tauri-drag-region>
+          <img class="window-titlebar-icon" src="/app-icon.png" alt="" data-tauri-drag-region />
+          <span data-tauri-drag-region>LocalLLM</span>
+        </div>
+        <div class="window-titlebar-center" data-tauri-drag-region>
+          <span class="window-titlebar-mark" aria-hidden="true"></span>
+          <span data-tauri-drag-region>Local intelligence, beautifully contained</span>
+        </div>
+        <div class="window-controls" role="group" aria-label="Window controls">
+          <button id="window-minimize" class="window-control window-control-minimize" type="button" aria-label="Minimize window" title="Minimize">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8" /></svg>
+          </button>
+          <button id="window-maximize" class="window-control window-control-maximize" type="button" aria-label="Maximize window" title="Maximize">
+            <svg class="window-maximize-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5" /></svg>
+            <svg class="window-restore-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 5V3.75A.75.75 0 0 1 6.75 3h5.5a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-.75.75H11" /><rect x="3" y="6" width="7" height="7" rx="1.5" /></svg>
+          </button>
+          <button id="window-close" class="window-control window-control-close" type="button" aria-label="Close window" title="Close">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
+          </button>
+        </div>
+      </div>
+
       <header class="topbar">
         <div class="brand-lockup">
           <img class="app-logo" src="/app-icon.png" alt="" />
@@ -23,11 +46,11 @@
           <label class="theme-picker">
             Theme
             <select id="theme-select">
-              <option value="spotify">Spotify</option>
-              <option value="sage">Sage</option>
-              <option value="graphite">Graphite</option>
-              <option value="paper">Paper</option>
-              <option value="webmcp">WebMCP</option>
+              <option value="spotify">Crystal dark</option>
+              <option value="sage">Sage dark</option>
+              <option value="graphite">Graphite dark</option>
+              <option value="paper">Crystal light</option>
+              <option value="webmcp">High contrast</option>
             </select>
           </label>
           <span id="server-pill" class="pill muted">Server offline</span>
@@ -39,6 +62,7 @@
       <nav class="app-tabs" role="tablist" aria-label="Application views">
         <button id="app-tab-control" class="app-tab-button" type="button" role="tab" aria-selected="true" aria-controls="app-view-control" data-app-tab="control">Control</button>
         <button id="app-tab-benchmark" class="app-tab-button" type="button" role="tab" aria-selected="false" aria-controls="app-view-benchmark" data-app-tab="benchmark">Benchmark</button>
+        <button id="app-tab-agent" class="app-tab-button" type="button" role="tab" aria-selected="false" aria-controls="app-view-agent" data-app-tab="agent">Agent</button>
         <button id="app-tab-webui" class="app-tab-button" type="button" role="tab" aria-selected="false" aria-controls="app-view-webui" data-app-tab="webui" disabled>Web UI</button>
       </nav>
 
@@ -796,6 +820,415 @@
             </div>
           </div>
         </section>
+      </section>
+
+      <section id="app-view-agent" class="app-view agent-view" role="tabpanel" aria-labelledby="app-tab-agent" hidden>
+        <section class="panel agent-panel agent-left-collapsed agent-right-collapsed" aria-labelledby="agent-heading">
+          <div class="panel-heading compact-heading">
+            <div>
+              <p class="eyebrow">local pi harness</p>
+              <h2 id="agent-heading">Agent Workbench</h2>
+            </div>
+            <div class="button-row">
+              <div class="agent-mode-switch" aria-label="Execution mode">
+                <button id="agent-mode-plan" class="agent-mode-switch-btn" type="button" aria-pressed="false">Plan</button>
+                <button id="agent-mode-edit" class="agent-mode-switch-btn active" type="button" aria-pressed="true">Edit</button>
+              </div>
+              <label class="agent-auto-approve-toggle">
+                <input id="agent-auto-approve-header" type="checkbox" />
+                Auto approve
+              </label>
+              <button id="agent-new-task" class="agent-icon-button" type="button" title="New task" aria-label="New task">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </button>
+              <button id="agent-history" class="agent-icon-button" type="button" title="History" aria-label="History">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5" /><path d="M12 7v5l3 2" /></svg>
+              </button>
+              <button id="agent-clear-current" class="agent-icon-button agent-clear-current" type="button" title="Clear current conversation" aria-label="Clear current conversation">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13" /><path d="M10 11v5M14 11v5" /></svg>
+              </button>
+              <button id="agent-manager" class="agent-icon-button" type="button" title="Agents" aria-label="Agents">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h8v6H8z" /><path d="M12 4v4M12 14v3M9 20h6M5 11H3M21 11h-2" /><path d="M9.5 11h.01M14.5 11h.01" /></svg>
+              </button>
+              <button id="agent-toggle-left" class="agent-icon-button" type="button" title="Toggle session panels" aria-label="Toggle session panels" aria-pressed="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z" /><path d="M9 5v14" /></svg>
+              </button>
+              <button id="agent-toggle-right" class="agent-icon-button" type="button" title="Toggle inspector panels" aria-label="Toggle inspector panels" aria-pressed="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z" /><path d="M15 5v14" /></svg>
+              </button>
+              <button id="agent-settings" class="agent-icon-button" type="button" title="Settings" aria-label="Settings" aria-pressed="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Z" /><path d="m19 12 .9-2-2-3.4-2.2.3a7 7 0 0 0-1.7-1L13.1 4H9.2l-.9 1.9a7 7 0 0 0-1.7 1l-2.2-.3-2 3.4.9 2-.9 2 2 3.4 2.2-.3a7 7 0 0 0 1.7 1l.9 1.9h3.9l.9-1.9a7 7 0 0 0 1.7-1l2.2.3 2-3.4-.9-2Z" /></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="agent-status-line">
+            <span id="agent-status" class="agent-status-pill">Agent ready</span>
+            <span id="agent-workspace-root" class="agent-status-pill">Workspace: checking</span>
+            <span id="agent-goal-status" class="agent-status-pill">Goal: not set</span>
+              <span id="agent-cli-status" class="agent-status-pill">CLI: checking pi</span>
+              <span class="agent-authorization-note">Pi runs behind the scenes; local tools stay as fallback.</span>
+          </div>
+
+          <button id="agent-left-bar" class="agent-collapse-bar agent-left-bar" type="button" aria-label="Show session panels">
+            <span>Session</span>
+          </button>
+
+          <button id="agent-right-bar" class="agent-collapse-bar agent-right-bar" type="button" aria-label="Show inspector panels">
+            <span>Inspector</span>
+          </button>
+
+          <div class="agent-workbench">
+            <section class="agent-chat-container">
+              <div id="agent-chat-messages" class="agent-chat-messages">
+                <div class="agent-welcome">
+                  <div class="agent-avatar">pi</div>
+                  <div>
+                    <h3>Pi coding workbench</h3>
+                    <p>Read, write, edit, bash, grep, find, and ls are available through the local workspace bridge.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="agent-chat-input-row">
+                <textarea id="agent-command-input" rows="3" spellcheck="true" placeholder="Ask the local coding agent"></textarea>
+                <div class="agent-composer-actions">
+                  <button id="agent-enhance-prompt" class="agent-icon-button" type="button" title="Enhance prompt" aria-label="Enhance prompt">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 8.5-8.5" /><path d="m11 4 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" /><path d="m18 3 .6 1.8L20 5.5l-1.4.7L18 8l-.6-1.8-1.4-.7 1.4-.7L18 3Z" /></svg>
+                  </button>
+                  <button id="agent-voice-input" class="agent-icon-button" type="button" title="Voice input" aria-label="Voice input">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" /></svg>
+                  </button>
+                  <button id="agent-run-command" class="agent-icon-button primary" type="button" title="Run agent" aria-label="Run agent"></button>
+                </div>
+              </div>
+            </section>
+
+            <section class="agent-file-panel" aria-label="Files">
+              <div class="agent-card-heading">
+                <div>
+                  <p class="agent-card-kicker">explorer</p>
+                  <h3>Files</h3>
+                </div>
+                <button id="agent-refresh-workspace" type="button">Refresh</button>
+              </div>
+              <div class="agent-form-grid">
+                <label>
+                  Path
+                  <input id="agent-path" autocomplete="off" spellcheck="false" placeholder="src/main.ts" />
+                </label>
+                <label>
+                  Destination
+                  <input id="agent-destination-path" autocomplete="off" spellcheck="false" placeholder="copy or move target" />
+                </label>
+              </div>
+              <textarea id="agent-file-content" rows="8" spellcheck="false" placeholder="File content"></textarea>
+              <div class="button-row">
+                <button id="agent-read-file" type="button">Read</button>
+                <button id="agent-edit-file" type="button">Write</button>
+                <button id="agent-insert-file" type="button">Insert</button>
+                <button id="agent-delete-file" type="button">Delete</button>
+                <button id="agent-copy-file" type="button">Copy</button>
+                <button id="agent-move-file" type="button">Move</button>
+                <button id="agent-paste-file" type="button">Paste</button>
+              </div>
+            </section>
+          </div>
+
+          <section class="agent-goal-panel" aria-label="Goal">
+            <div class="agent-card-heading">
+              <div>
+                  <p class="agent-card-kicker">session</p>
+                <h3>Goal</h3>
+              </div>
+              <button id="agent-set-goal" type="button">Set</button>
+            </div>
+            <textarea id="agent-goal" rows="3" spellcheck="true" placeholder="Persistent objective for the agent"></textarea>
+          </section>
+
+          <section class="agent-meta-grid" aria-label="Agent controls">
+            <div class="agent-toolkit-card">
+              <div class="agent-card-heading">
+                <div>
+                  <p class="agent-card-kicker">configuration</p>
+                  <h3>Agent profile</h3>
+                </div>
+                <span id="agent-profile-save-state" class="agent-profile-save-state" role="status">Saved</span>
+              </div>
+              <div class="agent-profile-picker">
+                <label>
+                  Saved profile
+                  <select id="agent-saved-profile-select" aria-describedby="agent-profile-feedback"></select>
+                </label>
+                <label>
+                  Profile name
+                  <input id="agent-profile-name" maxlength="80" autocomplete="off" spellcheck="false" />
+                </label>
+              </div>
+              <div class="agent-profile-actions" aria-label="Profile actions">
+                <button id="agent-profile-new" type="button">New</button>
+                <button id="agent-profile-save" class="primary" type="button">Save</button>
+                <button id="agent-profile-duplicate" type="button">Duplicate</button>
+                <button id="agent-profile-rename" type="button">Rename</button>
+                <button id="agent-profile-default" type="button">Make default</button>
+                <button id="agent-profile-export" type="button">Export</button>
+                <button id="agent-profile-import" type="button">Import</button>
+                <button id="agent-profile-reset" type="button">Reset</button>
+                <button id="agent-profile-delete" class="danger" type="button">Delete</button>
+                <input id="agent-profile-import-file" type="file" accept=".json,application/json" hidden />
+              </div>
+              <p id="agent-profile-feedback" class="agent-note" role="status">Profile settings are stored locally and validated before saving.</p>
+              <label>
+                Agent role
+                <select id="agent-profile-select"></select>
+              </label>
+              <label>
+                System instructions
+                <textarea id="agent-system-instructions" rows="4" maxlength="24000" spellcheck="true" placeholder="Persistent behavior and boundaries for this profile"></textarea>
+              </label>
+              <label>
+                Task instructions
+                <textarea id="agent-task-instructions" rows="3" maxlength="24000" spellcheck="true" placeholder="Reusable instructions added to each task"></textarea>
+              </label>
+              <p id="agent-profile-description" class="agent-note"></p>
+              <div id="agent-mode-tabs" class="agent-mode-row" role="group" aria-label="Agent profile shortcuts">
+                <button type="button" data-agent-mode="architect" aria-pressed="true">Architect</button>
+                <button type="button" data-agent-mode="ask" aria-pressed="false">Ask</button>
+                <button type="button" data-agent-mode="coder" aria-pressed="false">Coder</button>
+                <button type="button" data-agent-mode="debugger" aria-pressed="false">Debugger</button>
+                <button type="button" data-agent-mode="reviewer" aria-pressed="false">Reviewer</button>
+                <button type="button" data-agent-mode="tester" aria-pressed="false">Tester</button>
+                <button type="button" data-agent-mode="orchestrator" aria-pressed="false">Orchestrator</button>
+              </div>
+              <p id="agent-mode-description" class="agent-note"></p>
+              <label>
+                Thinking
+                <select id="agent-thinking-level">
+                  <option value="disabled">Disabled</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="xhigh">xHigh</option>
+                </select>
+              </label>
+              <p id="agent-thinking-description" class="agent-note"></p>
+              <details class="agent-advanced-settings">
+                <summary>Execution limits</summary>
+                <div class="agent-form-grid">
+                  <label>
+                    Temperature
+                    <input id="agent-temperature" type="number" min="0" max="2" step="0.1" value="0.7" />
+                  </label>
+                  <label>
+                    Timeout (seconds)
+                    <input id="agent-timeout-seconds" type="number" min="10" max="3600" step="10" value="300" />
+                  </label>
+                  <label>
+                    Retries
+                    <input id="agent-retry-count" type="number" min="0" max="5" step="1" value="1" />
+                  </label>
+                  <label>
+                    Maximum steps
+                    <input id="agent-max-steps" type="number" min="1" max="64" step="1" value="16" />
+                  </label>
+                </div>
+                <p class="agent-note">Limits are enforced by LocalLLM. Unsupported reasoning parameters are not sent to Pi.</p>
+              </details>
+              <div class="agent-toolkit" aria-label="Agent tools">
+                <div class="agent-tool-chip">
+                  <strong>read</strong>
+                  <span>files and dirs</span>
+                </div>
+                <div class="agent-tool-chip">
+                  <strong>write</strong>
+                  <span>full files</span>
+                </div>
+                <div class="agent-tool-chip">
+                  <strong>edit</strong>
+                  <span>exact patches</span>
+                </div>
+                <div class="agent-tool-chip">
+                  <strong>bash</strong>
+                  <span>workspace CLI</span>
+                </div>
+                <div class="agent-tool-chip">
+                  <strong>grep</strong>
+                  <span>ripgrep</span>
+                </div>
+                <div class="agent-tool-chip">
+                  <strong>find</strong>
+                  <span>file search</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="agent-connection-card">
+              <div class="agent-card-heading">
+                <div>
+                  <p class="agent-card-kicker">permissions</p>
+                  <h3>Tool Approval</h3>
+                </div>
+              </div>
+              <div class="toggle-row">
+                <label class="checkbox-label">
+                  <input id="agent-yolo-mode" type="checkbox" />
+                  YOLO mode
+                </label>
+                <label class="checkbox-label">
+                  <input id="agent-auto-accept" type="checkbox" />
+                  Auto approve
+                </label>
+              </div>
+              <div class="agent-permission-grid">
+                <label>Read<select id="agent-permission-read"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Edit<select id="agent-permission-edit"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Move<select id="agent-permission-move"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Copy<select id="agent-permission-copy"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Paste<select id="agent-permission-paste"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Browse<select id="agent-permission-browse"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Shell<select id="agent-permission-shell"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Todo<select id="agent-permission-todo"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Skill<select id="agent-permission-skill"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>Subagent<select id="agent-permission-subagent"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+                <label>External dir<select id="agent-permission-externalDirectory"><option value="allow">Allow</option><option value="ask">Ask</option><option value="deny">Deny</option></select></label>
+              </div>
+            </div>
+
+            <div class="agent-connection-card" aria-label="Workspace root">
+              <div class="agent-card-heading">
+                <div>
+                  <p class="agent-card-kicker">root</p>
+                  <h3>Workspace</h3>
+                </div>
+                <div class="button-row">
+                  <button id="agent-pick-workspace-root" type="button">Browse</button>
+                  <button id="agent-save-workspace-root" type="button">Save</button>
+                </div>
+              </div>
+              <input id="agent-workspace-root-input" autocomplete="off" spellcheck="false" placeholder="Workspace root" />
+            </div>
+          </section>
+
+          <section class="agent-orchestration-grid" aria-label="Agent memory">
+            <div class="agent-orchestration-card">
+              <div class="agent-card-heading">
+                <div>
+                  <p class="agent-card-kicker">tasks</p>
+                  <h3>Todos</h3>
+                </div>
+                <button id="agent-add-todo" type="button">Add</button>
+              </div>
+              <input id="agent-todo-input" autocomplete="off" spellcheck="true" placeholder="Next task" />
+              <div id="agent-todo-list" class="agent-todo-list"></div>
+            </div>
+
+            <div class="agent-orchestration-card">
+              <div class="agent-card-heading">
+                <div>
+                  <p class="agent-card-kicker">skills</p>
+                  <h3>Skills</h3>
+                </div>
+                <button id="agent-add-skill" type="button">Load</button>
+              </div>
+              <div class="agent-form-grid">
+                <input id="agent-skill-name" autocomplete="off" spellcheck="false" placeholder="Skill name" />
+                <input id="agent-skill-instructions" autocomplete="off" spellcheck="true" placeholder="Instructions" />
+              </div>
+              <div id="agent-skill-list" class="agent-chip-list"></div>
+            </div>
+
+            <div class="agent-orchestration-card">
+              <div class="agent-card-heading">
+                <div>
+                  <p class="agent-card-kicker">delegation</p>
+                  <h3>Subagents</h3>
+                </div>
+                <button id="agent-add-subagent" type="button">Add</button>
+              </div>
+              <div class="agent-form-grid">
+                <input id="agent-subagent-name" autocomplete="off" spellcheck="false" placeholder="Name" />
+                <input id="agent-subagent-role" autocomplete="off" spellcheck="true" placeholder="Role" />
+              </div>
+              <div id="agent-subagent-list" class="agent-chip-list"></div>
+            </div>
+
+            <div class="agent-orchestration-card">
+              <div class="agent-card-heading">
+                <div>
+                  <p class="agent-card-kicker">context</p>
+                  <h3>Compaction</h3>
+                </div>
+                <button id="agent-compact-context" type="button">Compact</button>
+              </div>
+              <label class="checkbox-label">
+                <input id="agent-auto-compact" type="checkbox" />
+                Auto compact
+              </label>
+              <textarea id="agent-context-summary" rows="5" spellcheck="false" placeholder="Context summary"></textarea>
+            </div>
+          </section>
+
+          <section class="agent-shell-panel" aria-label="Shell">
+            <div class="agent-card-heading">
+              <div>
+                  <p class="agent-card-kicker">terminal</p>
+                <h3>CLI</h3>
+              </div>
+              <button id="agent-run-shell" type="button">Run</button>
+            </div>
+            <input id="agent-shell-command" autocomplete="off" spellcheck="false" placeholder="npm run build" />
+            <pre id="agent-tool-output" class="agent-tool-output"></pre>
+            <button id="agent-clear-chat" type="button">Clear chat</button>
+          </section>
+
+          <section class="agent-mcp-panel" aria-label="MCP">
+            <div class="agent-card-heading">
+              <div>
+                <p class="agent-card-kicker">local servers</p>
+                <h3>MCP</h3>
+              </div>
+              <button id="agent-add-mcp-server" type="button">Add</button>
+            </div>
+            <input id="agent-mcp-url" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:3000" />
+            <div id="agent-mcp-list" class="agent-mcp-list"></div>
+          </section>
+
+          <section class="agent-browser-panel" aria-label="Browser">
+            <div class="agent-card-heading">
+              <div>
+                <p class="agent-card-kicker">web</p>
+                <h3>Browser</h3>
+              </div>
+              <button id="agent-browse-url" type="button">Open</button>
+            </div>
+            <input id="agent-url" autocomplete="off" spellcheck="false" placeholder="https://example.com" />
+            <iframe id="agent-browser-frame" class="agent-browser-frame" title="Agent browser" src="about:blank" loading="lazy"></iframe>
+          </section>
+
+        </section>
+
+        <div id="agent-history-overlay" class="agent-history-overlay" hidden>
+          <section class="agent-history-dialog" role="dialog" aria-modal="true" aria-labelledby="agent-history-heading" aria-describedby="agent-history-description">
+            <header class="agent-history-header">
+              <div>
+                <p class="agent-card-kicker">sessions</p>
+                <h2 id="agent-history-heading">Agent history</h2>
+                <p id="agent-history-description">Resume a conversation or permanently remove saved sessions.</p>
+              </div>
+              <button id="agent-history-close" class="agent-icon-button" type="button" title="Close history" aria-label="Close history">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+              </button>
+            </header>
+            <div class="agent-history-summary">
+              <span id="agent-history-count">No saved sessions</span>
+              <span>Stored locally on this device</span>
+            </div>
+            <div id="agent-history-list" class="agent-history-list" aria-live="polite"></div>
+            <footer class="agent-history-actions">
+              <button id="agent-history-clear-current" type="button">Clear current conversation</button>
+              <button id="agent-history-delete-all" class="danger" type="button">Delete all history</button>
+            </footer>
+          </section>
+        </div>
       </section>
 
       <section id="app-view-webui" class="app-view web-ui-view" role="tabpanel" aria-labelledby="app-tab-webui" hidden>

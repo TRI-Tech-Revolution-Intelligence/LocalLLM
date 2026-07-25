@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "LocalLLM",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "identifier": "com.localllm.llamacpp",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:pi-sidecar && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -17,7 +17,9 @@
         "width": 1180,
         "height": 780,
         "minWidth": 720,
-        "minHeight": 560
+        "minHeight": 560,
+        "decorations": false,
+        "shadow": true
       }
     ],
     "security": {
@@ -27,6 +29,19 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/pi"
+    ],
+    "resources": {
+      "binaries/theme": "theme",
+      "binaries/assets": "assets",
+      "binaries/export-html": "export-html",
+      "binaries/docs": "docs",
+      "binaries/examples": "examples",
+      "binaries/package.json": "package.json",
+      "binaries/README.md": "README.md",
+      "binaries/CHANGELOG.md": "CHANGELOG.md"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

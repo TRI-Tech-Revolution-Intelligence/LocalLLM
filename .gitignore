@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# LocalLLM runtime data and generated release inputs
+.localllm/
+src-tauri/binaries/
+*.rar
