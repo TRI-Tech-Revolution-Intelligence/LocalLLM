@@ -300,7 +300,7 @@ export type AgentThinkingLevel = "disabled" | "low" | "medium" | "high" | "xhigh
 
 export interface AgentProfile {
   id: string;
-  schemaVersion: 2;
+  schemaVersion: 3;
   name: string;
   role: AgentMode;
   systemInstructions: string;
@@ -322,7 +322,7 @@ export interface AgentProfile {
 }
 
 export interface AgentProfileStore {
-  schemaVersion: 2;
+  schemaVersion: 3;
   activeProfileId: string;
   defaultProfileId: string;
   profiles: AgentProfile[];
@@ -344,6 +344,7 @@ export interface AgentPiRequest {
   prompt: string;
   extraArgs: string[];
   timeoutSeconds: number;
+  temperature: number;
 }
 
 export interface AgentPiStatus {

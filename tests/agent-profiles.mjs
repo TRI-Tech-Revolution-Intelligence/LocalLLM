@@ -45,11 +45,18 @@ try {
   assert.equal(migrated.migrated, true);
   assert.equal(migrated.store.profiles[0].role, "coder");
   assert.equal(migrated.store.profiles[0].goal, "Ship safely");
-  assert.equal(migrated.store.profiles[0].schemaVersion, 2);
+  assert.equal(migrated.store.profiles[0].schemaVersion, 3);
+
+  const defaults = createAgentProfile("Fresh defaults");
+  assert.equal(defaults.role, "coder");
+  assert.equal(defaults.thinkingLevel, "medium");
+  assert.equal(defaults.temperature, 0.6);
+  assert.equal(defaults.maxSteps, 32);
+  assert.equal(createAgentProfile("Auto approve", { autoApprove: true }).yoloMode, true);
 
   const backupProfile = createAgentProfile("Recovered", { role: "reviewer" }, 100);
   const backupStore = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     activeProfileId: backupProfile.id,
     defaultProfileId: backupProfile.id,
     profiles: [backupProfile],
@@ -73,6 +80,25 @@ try {
   assert.equal(oldFormat.profiles[0].workspaceRoot, "C:\\project");
   assert.equal(oldFormat.profiles[0].timeoutSeconds, 3600);
 
+  const upgradedDefaults = normalizeAgentProfileStore({
+    schemaVersion: 2,
+    activeProfileId: "legacy-default",
+    defaultProfileId: "legacy-default",
+    profiles: [{
+      id: "legacy-default",
+      schemaVersion: 2,
+      name: "Default",
+      role: "architect",
+      thinkingLevel: "disabled",
+      temperature: 0.7,
+      maxSteps: 16,
+    }],
+  });
+  assert.equal(upgradedDefaults.profiles[0].role, "coder");
+  assert.equal(upgradedDefaults.profiles[0].thinkingLevel, "medium");
+  assert.equal(upgradedDefaults.profiles[0].temperature, 0.6);
+  assert.equal(upgradedDefaults.profiles[0].maxSteps, 32);
+
   const duplicate = duplicateAgentProfile(
     oldFormat.profiles[0],
     ["Legacy import", "Legacy import copy"],
@@ -83,7 +109,7 @@ try {
   assert.deepEqual(validateAgentProfile(duplicate), []);
 
   const exported = JSON.parse(exportAgentProfiles(oldFormat, oldFormat.profiles[0].id));
-  assert.equal(exported.schemaVersion, 2);
+  assert.equal(exported.schemaVersion, 3);
   assert.equal(exported.profiles.length, 1);
 
   console.log("Agent profile migration, validation, backup recovery, duplication, and export tests passed.");

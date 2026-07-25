@@ -200,6 +200,61 @@
   --danger-hover-border: #d04c4c;
 }
 
+:root[data-theme="liquidglass"] {
+  color-scheme: dark;
+  --app-bg: #101827;
+  --topbar-bg: rgba(13, 21, 35, 0.62);
+  --surface: rgba(14, 22, 36, 0.58);
+  --surface-alt: rgba(18, 28, 44, 0.54);
+  --surface-soft: rgba(24, 36, 55, 0.5);
+  --surface-muted: rgba(31, 45, 66, 0.48);
+  --control-bg: rgba(18, 28, 44, 0.56);
+  --control-hover-bg: rgba(35, 50, 72, 0.68);
+  --input-bg: rgba(7, 12, 22, 0.64);
+  --disabled-bg: rgba(24, 34, 50, 0.46);
+  --selected-bg: rgba(176, 207, 255, 0.24);
+  --text: #ffffff;
+  --heading: #ffffff;
+  --heading-soft: #f4f8ff;
+  --muted: rgba(247, 250, 255, 0.9);
+  --subtle: rgba(239, 245, 255, 0.76);
+  --faint: rgba(230, 238, 250, 0.6);
+  --border: rgba(255, 255, 255, 0.22);
+  --border-soft: rgba(255, 255, 255, 0.13);
+  --border-strong: rgba(255, 255, 255, 0.38);
+  --control-hover-border: rgba(255, 255, 255, 0.54);
+  --accent: #f5f8fc;
+  --accent-hover: #ffffff;
+  --accent-contrast: #111827;
+  --success-text: #b8f8d7;
+  --success-bg: rgba(22, 101, 72, 0.38);
+  --warning-text: #ffe2a3;
+  --error-text: #ffb2b2;
+  --focus: #b8d8ff;
+  --shadow: 0 18px 48px rgba(4, 9, 18, 0.34);
+  --code-bg: rgba(3, 7, 14, 0.72);
+  --code-border: rgba(255, 255, 255, 0.18);
+  --code-border-soft: rgba(255, 255, 255, 0.1);
+  --code-control-bg: rgba(255, 255, 255, 0.09);
+  --code-control-border: rgba(255, 255, 255, 0.2);
+  --code-text: #f3f7ff;
+  --code-muted: rgba(231, 239, 251, 0.7);
+  --code-helper: #c8ddff;
+  --loading-bg: rgba(255, 255, 255, 0.14);
+  --danger-text: #ffffff;
+  --danger-bg: rgba(157, 39, 52, 0.72);
+  --danger-border: rgba(255, 167, 174, 0.5);
+  --danger-hover-bg: rgba(190, 45, 60, 0.82);
+  --danger-hover-border: rgba(255, 196, 201, 0.72);
+  --glass: rgba(13, 21, 34, 0.62);
+  --glass-strong: rgba(16, 25, 40, 0.72);
+  --glass-soft: rgba(32, 46, 67, 0.52);
+  --glass-border: rgba(255, 255, 255, 0.24);
+  --glass-shadow:
+    0 24px 64px rgba(2, 7, 16, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
 :root[data-theme="paper"] {
   --app-bg: #f2f0e9;
   --topbar-bg: #fbfaf6;
@@ -3055,6 +3110,86 @@ h3,
   gap: 6px;
 }
 
+#app-view-agent .agent-prompt-loading {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 10px 4px 6px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--liquid-edge-soft));
+  border-radius: 999px;
+  color: var(--text);
+  background:
+    linear-gradient(125deg, color-mix(in srgb, var(--liquid-specular) 48%, transparent), transparent 50%),
+    color-mix(in srgb, var(--liquid-surface-soft) 84%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--liquid-specular) 76%, transparent),
+    0 7px 18px color-mix(in srgb, var(--accent) 18%, transparent);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+#app-view-agent .agent-prompt-loading[hidden] {
+  display: none;
+}
+
+#app-view-agent .agent-prompt-loading::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(105deg, transparent 22%, rgba(255, 255, 255, 0.48) 46%, transparent 68%);
+  transform: translateX(-130%);
+  animation: agent-loading-shimmer 1.65s ease-in-out infinite;
+}
+
+#app-view-agent .agent-prompt-loading-orb {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 52% 48% 58% 42% / 42% 58% 45% 55%;
+  background:
+    radial-gradient(circle at 30% 24%, white 0 10%, transparent 28%),
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 45%, #7ddcff), color-mix(in srgb, var(--accent) 56%, #b18cff));
+  box-shadow:
+    inset -3px -4px 8px rgba(20, 58, 93, 0.22),
+    0 0 14px color-mix(in srgb, var(--accent) 44%, transparent);
+  animation: agent-loading-liquid 1.45s ease-in-out infinite alternate;
+}
+
+#app-view-agent .agent-chat-input-row.is-loading textarea {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--liquid-edge-soft));
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.1),
+    0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+@keyframes agent-loading-liquid {
+  0% {
+    border-radius: 52% 48% 58% 42% / 42% 58% 45% 55%;
+    transform: rotate(-8deg) scale(0.9);
+  }
+  55% {
+    border-radius: 40% 60% 44% 56% / 58% 44% 56% 42%;
+  }
+  100% {
+    border-radius: 61% 39% 48% 52% / 46% 54% 39% 61%;
+    transform: rotate(12deg) scale(1.08);
+  }
+}
+
+@keyframes agent-loading-shimmer {
+  58%,
+  100% {
+    transform: translateX(130%);
+  }
+}
+
 #app-view-agent .agent-composer-actions .agent-icon-button {
   width: 38px;
   min-width: 38px;
@@ -3963,6 +4098,28 @@ summary:focus-visible {
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
+:root[data-theme="liquidglass"] {
+  --liquid-ink: #f8fbff;
+  --liquid-cyan: #c5dcff;
+  --liquid-blue: #94bfff;
+  --liquid-violet: #d8c7ff;
+  --liquid-mint: #b8f5df;
+  --liquid-surface: rgba(13, 21, 34, 0.58);
+  --liquid-surface-strong: rgba(17, 27, 43, 0.68);
+  --liquid-surface-soft: rgba(255, 255, 255, 0.1);
+  --liquid-edge: rgba(255, 255, 255, 0.34);
+  --liquid-edge-soft: rgba(255, 255, 255, 0.16);
+  --liquid-specular: rgba(255, 255, 255, 0.58);
+  --liquid-shadow:
+    0 28px 70px rgba(3, 8, 18, 0.42),
+    0 8px 22px rgba(3, 8, 18, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+  --liquid-shadow-soft:
+    0 16px 38px rgba(3, 8, 18, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
 html,
 body {
   overflow: hidden;
@@ -3975,6 +4132,22 @@ body {
     radial-gradient(ellipse 48% 58% at 96% 14%, color-mix(in srgb, var(--liquid-violet) 32%, transparent), transparent 70%),
     radial-gradient(ellipse 50% 58% at 52% 104%, color-mix(in srgb, var(--liquid-mint) 25%, transparent), transparent 72%),
     linear-gradient(145deg, color-mix(in srgb, var(--app-bg) 84%, #d9efff), var(--app-bg) 48%, color-mix(in srgb, var(--app-bg) 88%, #efe4ff));
+}
+
+:root[data-theme="liquidglass"] body {
+  background-color: var(--app-bg);
+  background-image:
+    linear-gradient(135deg, rgba(7, 12, 22, 0.3), rgba(18, 24, 38, 0.12) 48%, rgba(5, 10, 20, 0.38)),
+    url("https://images.unsplash.com/photo-1752440093057-1c188e7137e9?q=80&w=1920&auto=format&fit=crop");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+:root[data-theme="liquidglass"] body::before,
+:root[data-theme="liquidglass"] body::after {
+  opacity: 0.18;
 }
 
 body::before,
@@ -5084,4 +5257,28 @@ body::after {
   #app-view-agent .agent-mcp-row .button-row button {
     flex: 1 1 auto;
   }
+}
+
+/* Keep code surfaces readable after the global glass treatment. */
+:root[data-theme="webmcp"] .command-box,
+:root[data-theme="webmcp"] .terminal-output {
+  border-color: var(--code-border);
+  color: var(--code-text);
+  background: var(--code-bg);
+  box-shadow: 7px 7px 0 #171717;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-theme="webmcp"] #command-preview {
+  color: #f6fbff;
+  opacity: 1;
+}
+
+:root[data-theme="webmcp"] .command-header {
+  color: #dceaf1;
+}
+
+:root[data-theme="webmcp"] .command-helper {
+  color: #86dfff;
 }

@@ -24,7 +24,7 @@ export const agentProfilesBackupStorageKey = "localllm-agent-profiles-v2-backup"
 export const benchmarkDefaultPrompt =
   "Write a concise field report about a local AI server benchmark. Include one bottleneck, one strength, and one practical tuning idea.";
 export const benchmarkPrefillTargets = [2048, 4098, 8192];
-export const themes = new Set(["spotify", "sage", "graphite", "paper", "webmcp"]);
+export const themes = new Set(["spotify", "sage", "graphite", "paper", "webmcp", "liquidglass"]);
 export const minLeftPaneWidth = 300;
 export const minRightPaneWidth = 320;
 

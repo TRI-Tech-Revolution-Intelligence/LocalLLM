@@ -71,6 +71,26 @@ await page.addInitScript(() => {
       if (command === "discover_pi_agent") {
         return { available: true, command: "pi", version: "0.82.0", checked: ["bundled"] };
       }
+      if (command === "agent_run_pi") {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        return {
+          success: true,
+          statusCode: 0,
+          command: "pi --thinking medium -p",
+          stdout: "Completed answer",
+          stderr: "",
+        };
+      }
+      if (command === "agent_http_fetch") {
+        return {
+          success: true,
+          statusCode: 200,
+          command: `GET ${args.request.url}`,
+          stdout:
+            '<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs">Example docs</a><div class="result__snippet">Keyless search result.</div></div>',
+          stderr: "",
+        };
+      }
       if (command === "agent_workspace_root") return config.agentWorkspaceRoot;
       if (command === "agent_validate_workspace") return args.path;
       if (command === "preview_server_command") return "llama-server --host 127.0.0.1 --port 8080";
@@ -123,6 +143,37 @@ await page.addInitScript(() => {
 
 try {
   await page.goto(appUrl, { waitUntil: "networkidle" });
+  const topbarRect = await page.locator(".topbar").boundingBox();
+  assert.ok(topbarRect, "Top bar is not visibly rendered");
+  const backgroundMaterial = await page.evaluate(() => ({
+    bodyImage: getComputedStyle(document.body).backgroundImage,
+    ambientScene: Boolean(document.querySelector(".liquid-ambient")),
+    pointerLights: document.querySelectorAll(".liquid-surface-light").length,
+  }));
+  assert.equal(backgroundMaterial.ambientScene, false, "Reference artwork leaked into the application background");
+  assert.equal(backgroundMaterial.pointerLights, 0, "Pointer-following light overlays are still present");
+  assert.doesNotMatch(backgroundMaterial.bodyImage, /url\(/i, "An image asset leaked into the application background");
+  await page.locator("#theme-select").selectOption("liquidglass");
+  const liquidGlassTheme = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    backgroundImage: getComputedStyle(document.body).backgroundImage,
+    topbarBlur: getComputedStyle(document.querySelector(".topbar")).backdropFilter,
+    textColor: getComputedStyle(document.documentElement).getPropertyValue("--text").trim(),
+    glassColor: getComputedStyle(document.documentElement).getPropertyValue("--glass").trim(),
+  }));
+  assert.equal(liquidGlassTheme.theme, "liquidglass");
+  assert.match(liquidGlassTheme.backgroundImage, /images\.unsplash\.com/i);
+  assert.notEqual(liquidGlassTheme.topbarBlur, "none", "Liquid glass theme lost its backdrop blur");
+  assert.equal(liquidGlassTheme.textColor, "#ffffff");
+  assert.match(liquidGlassTheme.glassColor, /rgba\(13,\s*21,\s*34,\s*0\.62\)/i);
+  await page.locator("#theme-select").selectOption("webmcp");
+  const highContrastCommand = await page.evaluate(() => ({
+    text: getComputedStyle(document.querySelector("#command-preview")).color,
+    background: getComputedStyle(document.querySelector(".command-box")).backgroundColor,
+  }));
+  assert.equal(highContrastCommand.text, "rgb(246, 251, 255)");
+  assert.equal(highContrastCommand.background, "rgb(18, 28, 37)");
+  await page.locator("#theme-select").selectOption("spotify");
   await page.getByRole("tab", { name: "Agent" }).click();
 
   await page.locator("#agent-history").click();
@@ -157,6 +208,24 @@ try {
 
   await page.locator("#agent-toggle-left").click();
   await page.locator("#agent-profile-name").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#agent-profile-select").inputValue(), "coder");
+  assert.equal(await page.locator("#agent-thinking-level").inputValue(), "medium");
+  assert.equal(await page.locator("#agent-temperature").inputValue(), "0.6");
+  assert.equal(await page.locator("#agent-max-steps").inputValue(), "32");
+
+  await page.locator("#agent-auto-approve-header").check();
+  assert.equal(await page.locator("#agent-yolo-mode").isChecked(), true);
+  await page.locator("#agent-command-input").fill("Answer this prompt.");
+  await page.locator("#agent-run-command").click();
+  await page.locator("#agent-prompt-loading").waitFor({ state: "visible" });
+  assert.equal(await page.locator(".agent-chat-input-row").getAttribute("aria-busy"), "true");
+  await page.locator("#agent-prompt-loading").waitFor({ state: "hidden" });
+  assert.equal(await page.locator(".agent-chat-input-row").getAttribute("aria-busy"), "false");
+  await page.getByText("Completed answer", { exact: true }).waitFor();
+  await page.locator("#agent-command-input").fill("websearch local llm");
+  await page.locator("#agent-run-command").click();
+  await page.locator("#agent-chat-messages").getByText(/DuckDuckGo results for "local llm"/).waitFor();
+  await page.locator("#agent-chat-messages").getByText(/https:\/\/example\.com\/docs/).waitFor();
 
   await page.getByRole("button", { name: "Delete task Ship release" }).click();
   await page.locator(".app-confirm").getByRole("button", { name: "Delete" }).click();
@@ -255,12 +324,16 @@ try {
       chatRadius: Number.parseFloat(styles[4].borderTopLeftRadius),
       blurSurfaces: styles.filter((style) => style.backdropFilter !== "none").length,
       windowControls: titlebar.querySelectorAll(".window-control").length,
+      surfaceLights: document.querySelectorAll(".liquid-surface-light").length,
+      panelBackground: styles[3].backgroundImage,
     };
   });
   assert.ok(liquidGlass.topbarRadius >= 20, "Top bar lost its floating glass shape");
   assert.ok(liquidGlass.tabRadius >= 20, "Navigation lost its capsule shape");
   assert.ok(liquidGlass.titlebarRadius >= 16, "Window titlebar lost its glass shape");
   assert.equal(liquidGlass.windowControls, 3, "Window titlebar controls are incomplete");
+  assert.equal(liquidGlass.surfaceLights, 0, "Glass material regressed into a lighting overlay");
+  assert.doesNotMatch(liquidGlass.panelBackground, /radial-gradient/i, "Workbench panel uses a light bloom");
   assert.ok(liquidGlass.panelRadius >= 20, "Workbench lost its liquid glass shape");
   assert.ok(liquidGlass.panelGap >= 6, "Workbench panes collapsed into hard dividers");
   assert.ok(liquidGlass.chatRadius >= 16, "Chat surface lost its glass shape");

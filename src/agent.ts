@@ -126,16 +126,16 @@ let agentPermissions: AgentPermissions = { ...defaultAgentPermissions };
 let yoloMode = false;
 let autoAccept = false;
 let agentGoal = "";
-let agentMode: AgentMode = "architect";
-let activeAgentProfile: AgentMode = "architect";
+let agentMode: AgentMode = "coder";
+let activeAgentProfile: AgentMode = "coder";
 let agentExecutionMode: AgentExecutionMode = "edit";
-let agentThinkingLevel: AgentThinkingLevel = "disabled";
+let agentThinkingLevel: AgentThinkingLevel = "medium";
 let agentSystemInstructions = "";
 let agentTaskInstructions = "";
-let agentTemperature = 0.7;
+let agentTemperature = 0.6;
 let agentTimeoutSeconds = 300;
 let agentRetryCount = 1;
-let agentMaxSteps = 16;
+let agentMaxSteps = 32;
 let autoCompact = false;
 let piAgentStatus: AgentPiStatus | null = null;
 let piAgentDiscovery: Promise<AgentPiStatus | null> | null = null;
@@ -550,9 +550,10 @@ const localTools: AgentToolDefinition[] = [
   },
   {
     name: "web_search",
-    description: "Search the web with DuckDuckGo and return the top results.",
+    description:
+      "Search the web without an API key. Uses the OMP-style public provider chain: DuckDuckGo, Ecosia, Google, then Mojeek.",
     permission: "browse",
-    run: async (args) => webSearchDuckDuckGo(stringArg(args, "query")),
+    run: async (args) => webSearchKeyless(stringArg(args, "query"), stringArg(args, "provider") || "auto"),
   },
   {
     name: "web_fetch",
@@ -843,7 +844,7 @@ function toolAliasCanonical(toolName: string): string {
 function normalizeThinkingLevel(value: string | null | undefined): AgentThinkingLevel {
   return value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "disabled"
     ? value
-    : "disabled";
+    : "medium";
 }
 
 function activeSavedProfile(): AgentProfile {
@@ -995,7 +996,7 @@ async function applySavedAgentProfile(profile: AgentProfile, persistWorkspace = 
     agentExecutionMode = profile.executionMode;
     agentPermissions = { ...profile.permissions };
     autoAccept = profile.autoApprove;
-    yoloMode = profile.yoloMode;
+    yoloMode = profile.yoloMode || profile.autoApprove;
     autoCompact = profile.autoCompact;
     agentTemperature = profile.temperature;
     agentTimeoutSeconds = profile.timeoutSeconds;
@@ -1104,7 +1105,8 @@ async function saveCurrentAgentProfile(): Promise<void> {
 async function createNewAgentProfile(): Promise<void> {
   if (!(await confirmDiscardAgentProfileChanges())) return;
   const profile = createAgentProfile(uniqueProfileName("New Profile"), {
-    role: "architect",
+    role: "coder",
+    thinkingLevel: "medium",
     workspaceRoot: ($("agent-workspace-root-input") as HTMLInputElement).value.trim(),
   });
   agentProfileStore.profiles.push(profile);
@@ -1301,8 +1303,8 @@ function syncAgentThinkingUi() {
   const budgetLabel = budget === -1 ? "unlimited" : String(budget);
   description.textContent =
     agentThinkingLevel === "disabled"
-      ? "Thinking is disabled for the local llama-server fallback. Pi CLI receives no unsupported reasoning flags."
-      : `${select?.selectedOptions[0]?.textContent ?? agentThinkingLevel}: local fallback uses reasoning_effort=${agentThinkingEffort()} and budget=${budgetLabel}. Pi uses its own model capabilities.`;
+      ? "Thinking is disabled for both the local fallback and Pi CLI."
+      : `${select?.selectedOptions[0]?.textContent ?? agentThinkingLevel}: local fallback uses reasoning_effort=${agentThinkingEffort()} and budget=${budgetLabel}; Pi receives the matching --thinking level.`;
 }
 
 function saveAgentThinkingLevel() {
@@ -2110,12 +2112,42 @@ function setYoloMode(enabled: boolean) {
       externalDirectory: "allow",
     };
   } else {
+    // Auto approve is a YOLO capability: turning YOLO off must also revoke it.
+    autoAccept = false;
     agentPermissions = loadAgentPermissions();
   }
   saveAgentApprovalMode();
   syncPermissionControls();
   if (!profileEventsSuspended) setAgentProfileDirty(true);
   setAgentStatus(enabled ? "YOLO mode enabled: all local tool asks are auto-approved" : "YOLO mode disabled");
+}
+
+function setAutoApprove(enabled: boolean, label = "Auto approve") {
+  autoAccept = enabled;
+  if (enabled && !yoloMode) {
+    yoloMode = true;
+    agentPermissions = {
+      read: "allow",
+      edit: "allow",
+      move: "allow",
+      copy: "allow",
+      paste: "allow",
+      browse: "allow",
+      shell: "allow",
+      todo: "allow",
+      skill: "allow",
+      subagent: "allow",
+      externalDirectory: "allow",
+    };
+  }
+  saveAgentApprovalMode();
+  syncPermissionControls();
+  if (!profileEventsSuspended) setAgentProfileDirty(true);
+  setAgentStatus(
+    enabled
+      ? `${label} enabled · YOLO mode enabled`
+      : `${label} disabled${yoloMode ? " · YOLO mode remains enabled" : ""}`,
+  );
 }
 
 function bindPermissionControls() {
@@ -2136,19 +2168,11 @@ function bindPermissionControls() {
     setYoloMode(($("agent-yolo-mode") as HTMLInputElement).checked);
   });
   $("agent-auto-accept").addEventListener("change", () => {
-    autoAccept = ($("agent-auto-accept") as HTMLInputElement).checked;
-    saveAgentApprovalMode();
-    syncPermissionControls();
-    setAgentProfileDirty(true);
-    setAgentStatus(autoAccept ? "Auto accept enabled for ask prompts" : "Auto accept disabled");
+    setAutoApprove(($("agent-auto-accept") as HTMLInputElement).checked, "Auto accept");
   });
   const headerAutoApprove = document.getElementById("agent-auto-approve-header") as HTMLInputElement | null;
   headerAutoApprove?.addEventListener("change", () => {
-    autoAccept = headerAutoApprove.checked;
-    saveAgentApprovalMode();
-    syncPermissionControls();
-    setAgentProfileDirty(true);
-    setAgentStatus(autoAccept ? "Auto approve enabled" : "Auto approve disabled");
+    setAutoApprove(headerAutoApprove.checked);
   });
 }
 
@@ -2869,44 +2893,182 @@ async function httpFetch(
   });
 }
 
-function parseDuckDuckGoResults(html: string): { title: string; url: string; snippet: string }[] {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const links = Array.from(doc.querySelectorAll("a.result-link, a.result__a"));
-  const snippets = Array.from(doc.querySelectorAll(".result-snippet, .result__snippet"));
-  return links
-    .slice(0, 8)
-    .map((link, index) => ({
-      title: (link.textContent ?? "").replace(/\s+/g, " ").trim(),
-      url: (link.getAttribute("href") ?? "").trim(),
-      snippet: (snippets[index]?.textContent ?? "").replace(/\s+/g, " ").trim(),
-    }))
-    .filter((result) => result.title);
+interface KeylessWebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
 }
 
-// DuckDuckGo is the default search engine. This fetches the lite results page so
-// the agent receives real result titles, links, and snippets, and also mirrors
-// the query into the browser preview.
-async function webSearchDuckDuckGo(query: string): Promise<string> {
+type KeylessWebSearchProviderId = "duckduckgo" | "ecosia" | "google" | "mojeek";
+
+function normalizeSearchText(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function unwrapSearchUrl(href: string, base: string, rejectedHosts: string[] = []): string {
+  try {
+    const resolved = new URL(href.replace(/&amp;/g, "&"), base);
+    const wrapped = resolved.searchParams.get("uddg") || resolved.searchParams.get("url") || resolved.searchParams.get("q");
+    const target = wrapped && /^https?:\/\//i.test(wrapped) ? new URL(wrapped) : resolved;
+    if (!["http:", "https:"].includes(target.protocol)) return "";
+    if (rejectedHosts.some((host) => target.hostname === host || target.hostname.endsWith(`.${host}`))) return "";
+    return target.href;
+  } catch {
+    return "";
+  }
+}
+
+function parseDuckDuckGoResults(html: string): KeylessWebSearchResult[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return Array.from(doc.querySelectorAll(".result"))
+    .map((block) => {
+      const link = block.querySelector<HTMLAnchorElement>("a.result__a, a.result-link");
+      return {
+        title: normalizeSearchText(link?.textContent),
+        url: unwrapSearchUrl(link?.getAttribute("href") ?? "", "https://html.duckduckgo.com/", ["duckduckgo.com"]),
+        snippet: normalizeSearchText(block.querySelector(".result__snippet, .result-snippet")?.textContent),
+      };
+    })
+    .filter((result) => result.title && result.url)
+    .slice(0, 10);
+}
+
+function parseEcosiaResults(html: string): KeylessWebSearchResult[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return Array.from(doc.querySelectorAll('article[data-test-id="organic-result"]'))
+    .map((block) => {
+      const heading = block.querySelector('[data-test-id="result-title"]');
+      const link = heading?.closest("a");
+      return {
+        title: normalizeSearchText(heading?.textContent),
+        url: unwrapSearchUrl(link?.getAttribute("href") ?? "", "https://www.ecosia.org/", ["ecosia.org"]),
+        snippet: normalizeSearchText(
+          block.querySelector('[data-test-id="web-result-description"], [data-test-id="result-description"]')
+            ?.textContent,
+        ),
+      };
+    })
+    .filter((result) => result.title && result.url)
+    .slice(0, 10);
+}
+
+function parseGoogleResults(html: string): KeylessWebSearchResult[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return Array.from(doc.querySelectorAll("h3"))
+    .map((heading) => {
+      const link = heading.closest("a");
+      const container = heading.closest(".tF2Cxc, .MjjYud, .Gx5Zad") ?? link?.parentElement;
+      return {
+        title: normalizeSearchText(heading.textContent),
+        url: unwrapSearchUrl(link?.getAttribute("href") ?? "", "https://www.google.com/", ["google.com"]),
+        snippet: normalizeSearchText(
+          container?.querySelector(".VwiC3b, .IsZvec, .BNeawe.s3v9rd, [data-sncf='1']")?.textContent,
+        ),
+      };
+    })
+    .filter((result) => result.title && result.url)
+    .slice(0, 10);
+}
+
+function parseMojeekResults(html: string): KeylessWebSearchResult[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return Array.from(doc.querySelectorAll("ul.results-standard > li"))
+    .map((block) => {
+      const link = block.querySelector<HTMLAnchorElement>("h2 a.title, a.title");
+      return {
+        title: normalizeSearchText(link?.textContent),
+        url: unwrapSearchUrl(link?.getAttribute("href") ?? "", "https://www.mojeek.de/", ["mojeek.de"]),
+        snippet: normalizeSearchText(block.querySelector("p.s")?.textContent),
+      };
+    })
+    .filter((result) => result.title && result.url)
+    .slice(0, 10);
+}
+
+const keylessWebSearchProviders: Array<{
+  id: KeylessWebSearchProviderId;
+  label: string;
+  endpoint: (query: string) => string;
+  parse: (html: string) => KeylessWebSearchResult[];
+}> = [
+  {
+    id: "duckduckgo",
+    label: "DuckDuckGo",
+    endpoint: (query) => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    parse: parseDuckDuckGoResults,
+  },
+  {
+    id: "ecosia",
+    label: "Ecosia",
+    endpoint: (query) => `https://www.ecosia.org/search?q=${encodeURIComponent(query)}`,
+    parse: parseEcosiaResults,
+  },
+  {
+    id: "google",
+    label: "Google",
+    endpoint: (query) =>
+      `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10&hl=en&udm=14&pws=0`,
+    parse: parseGoogleResults,
+  },
+  {
+    id: "mojeek",
+    label: "Mojeek",
+    endpoint: (query) =>
+      `https://www.mojeek.de/search?q=${encodeURIComponent(query)}&t=10&arc=none&lang=en`,
+    parse: parseMojeekResults,
+  },
+];
+
+// Mirrors OMP's public, credential-free search providers. "auto" falls
+// through on HTTP failures, bot challenges, and markup with no parsed results.
+async function webSearchKeyless(query: string, requestedProvider = "auto"): Promise<string> {
   if (!query) throw new Error("Enter a search query");
-  if (!(await requestToolPermission("browse", `DuckDuckGo search: ${query}`))) return "Search denied";
+  if (!(await requestToolPermission("browse", `Keyless web search: ${query}`))) return "Search denied";
 
   const previewUrl = duckDuckGoUrl(query);
   ($("agent-url") as HTMLInputElement).value = previewUrl;
-  ($("agent-browser-frame") as HTMLIFrameElement).src = previewUrl;
 
-  const endpoint = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
-  const result = await httpFetch(endpoint, { timeoutSeconds: 30 });
-  const results = parseDuckDuckGoResults(result.stdout);
-  const output = results.length
-    ? `DuckDuckGo results for "${query}":\n\n${results
+  const normalizedProvider = requestedProvider.trim().toLowerCase();
+  const providers =
+    normalizedProvider === "auto"
+      ? keylessWebSearchProviders
+      : keylessWebSearchProviders.filter((provider) => provider.id === normalizedProvider);
+  if (providers.length === 0) {
+    throw new Error("Unknown web search provider. Use auto, duckduckgo, ecosia, google, or mojeek.");
+  }
+
+  const failures: string[] = [];
+  for (const provider of providers) {
+    setAgentStatus(`Searching ${provider.label} without an API key`);
+    try {
+      const result = await httpFetch(provider.endpoint(query), { timeoutSeconds: 30 });
+      if (!result.success) {
+        failures.push(`${provider.label}: ${result.stderr.trim() || `HTTP ${result.statusCode ?? "error"}`}`);
+        continue;
+      }
+      const results = provider.parse(result.stdout);
+      if (results.length === 0) {
+        failures.push(`${provider.label}: no parseable results`);
+        continue;
+      }
+      const output = `${provider.label} results for "${query}" (no API key):\n\n${results
         .map((item, index) => `${index + 1}. ${item.title}\n   ${item.url}${item.snippet ? `\n   ${item.snippet}` : ""}`)
-        .join("\n\n")}`
-    : `No parseable DuckDuckGo results for "${query}". Opened the search page in the preview.${
-        result.stderr.trim() ? `\n${result.stderr.trim()}` : ""
-      }`;
+        .join("\n\n")}`;
+      setAgentOutput(output);
+      appendAgentMessage("tool", output);
+      setAgentStatus(`${provider.label} search complete`);
+      return output;
+    } catch (error) {
+      failures.push(`${provider.label}: ${String(error)}`);
+    }
+  }
+
+  const output =
+    `No keyless provider returned parseable results for "${query}". The DuckDuckGo URL is available in the Browser field.\n\n` +
+    failures.map((failure) => `- ${failure}`).join("\n");
   setAgentOutput(output);
   appendAgentMessage("tool", output);
-  setAgentStatus("DuckDuckGo search complete");
+  setAgentStatus("Keyless web search exhausted all providers");
   return output;
 }
 
@@ -3042,11 +3204,34 @@ function composePiCodingPrompt(userPrompt: string): string {
     agentGoal ? `Current goal:\n${agentGoal}` : "",
     contextSummary ? `Context summary:\n${contextSummary}` : "",
     conversationSnapshot() ? `Recent LocalLLM transcript:\n${conversationSnapshot()}` : "",
+    "Answer direct questions completely. In Edit mode, do not stop after describing a plan: execute every safe, in-scope step, verify the result, and only then give a final response.",
+    "Continue autonomously through ordinary recoverable errors and never ask the user to say “continue”. Ask a follow-up only when required information or authority is genuinely missing.",
     "Use Pi's native tools for workspace inspection and edits. Prefer small, verifiable changes and report commands/tests you ran.",
     `User request:\n${userPrompt}`,
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function piThinkingArgument(): string {
+  return agentThinkingLevel === "disabled" ? "off" : agentThinkingLevel;
+}
+
+function piResponseNeedsContinuation(text: string): boolean {
+  if (agentExecutionMode === "plan") return false;
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return true;
+  if ((text.match(/```/g)?.length ?? 0) % 2 !== 0) return true;
+  return (
+    /\b(?:tell|ask) me to continue\b/i.test(normalized) ||
+    /\b(?:i(?:'ll| will)|let me) continue\b/i.test(normalized) ||
+    /\b(?:paused|stopped|halting)\b.{0,80}\b(?:limit|unfinished|remaining|continue)\b/i.test(normalized) ||
+    /\b(?:remaining|pending) (?:work|steps?|tasks?)\b.{0,120}\b(?:need|will|next|continue)\b/i.test(normalized) ||
+    /\b(?:next|now) i (?:need|will|should|must) (?:to )?(?:run|edit|write|implement|verify|test|inspect)\b[^.!?]*$/i.test(
+      normalized,
+    ) ||
+    /(?:\.{3}|…)$/.test(normalized)
+  );
 }
 
 async function runPiCodingAgent(prompt: string): Promise<string> {
@@ -3057,30 +3242,66 @@ async function runPiCodingAgent(prompt: string): Promise<string> {
 
   setAgentCliStatus("CLI: pi running");
   setAgentStatus("Running Pi coding agent");
+  showAgentThinking("Pi is working");
   let result: CommandOutput | null = null;
-  for (let attempt = 0; attempt <= agentRetryCount; attempt += 1) {
-    result = await invoke<CommandOutput>("agent_run_pi", {
-      request: {
-        prompt: composePiCodingPrompt(prompt),
-        extraArgs: [],
-        timeoutSeconds: agentTimeoutSeconds,
-      },
-    });
-    if (result.success || attempt === agentRetryCount) break;
-    setAgentStatus(`Pi failed · retry ${attempt + 1}/${agentRetryCount}`);
+  const segments: string[] = [];
+  const maxRecoveries = Math.min(3, Math.max(1, agentRetryCount + 1));
+  let nextPrompt = composePiCodingPrompt(prompt);
+  let continueSession = false;
+  try {
+    for (let attempt = 0; attempt <= maxRecoveries; attempt += 1) {
+      result = await invoke<CommandOutput>("agent_run_pi", {
+        request: {
+          prompt: nextPrompt,
+          extraArgs: [
+            "--thinking",
+            piThinkingArgument(),
+            ...(continueSession ? ["--continue"] : []),
+          ],
+          timeoutSeconds: agentTimeoutSeconds,
+          temperature: agentTemperature,
+        },
+      });
+      const body = result.stdout.trim() || (result.success ? "" : result.stderr.trim());
+      if (!result.success) {
+        if (attempt === maxRecoveries) break;
+        setAgentStatus(`Pi failed · retry ${attempt + 1}/${maxRecoveries}`);
+        nextPrompt = composePiCodingPrompt(prompt);
+        continueSession = false;
+        continue;
+      }
+      if (body) segments.push(body);
+      if (!body || piResponseNeedsContinuation(body)) {
+        if (attempt === maxRecoveries) break;
+        continueSession = true;
+        nextPrompt = body
+          ? "Continue the same task now. Do not repeat the plan or prior summary. Execute and verify every remaining step, then return the completed result."
+          : "Your previous response was empty. Continue the same task now, answer or execute it fully, verify the result, and return a non-empty final response.";
+        setAgentStatus(`Pi is continuing automatically · pass ${attempt + 2}/${maxRecoveries + 1}`);
+        showAgentThinking("Pi is continuing");
+        continue;
+      }
+      break;
+    }
+  } finally {
+    hideAgentThinking();
   }
   if (!result) throw new Error("Pi did not return a result");
-  const body = result.stdout.trim() || result.stderr.trim() || "(no output)";
+  const body = segments.join("\n\n--- continued ---\n\n").trim();
+  if (result.success && !body) {
+    setAgentCliStatus("CLI: pi empty response");
+    throw new Error("Pi returned an empty response after automatic recovery attempts.");
+  }
   const output = [
     `pi> ${result.command}`,
     `status: ${result.statusCode ?? "unknown"} ${result.success ? "ok" : "failed"}`,
-    body,
+    body || result.stderr.trim() || "(no output)",
   ].join("\n\n");
   setAgentOutput(output);
-  appendAgentMessage(result.success ? "agent" : "tool", body);
+  appendAgentMessage(result.success ? "agent" : "tool", body || result.stderr.trim() || "(no output)");
   setAgentCliStatus(result.success ? defaultAgentCliStatus() : "CLI: pi failed");
   if (!result.success) {
-    throw new Error(body);
+    throw new Error(body || result.stderr.trim() || "Pi failed without an error message");
   }
   return body;
 }
@@ -3644,7 +3865,7 @@ async function postLocalCompletion(
         "",
     ).trim();
     setAgentStatus(`Connected to ${baseUrl}`);
-    return text || "Local server returned an empty response.";
+    return text;
   } finally {
     hideAgentThinking();
   }
@@ -3996,7 +4217,7 @@ function agentToolInstructions(): string {
     "- execute_command {\"command\":\"npm run build\"}: command execution",
     "- browse_url {\"url\":\"https://example.com\"}: open a URL",
     "- browser_action {\"action\":\"open\",\"url\":\"https://example.com\"}: browser open/search/close actions",
-    "- web_search {\"query\":\"...\"}: DuckDuckGo web search returning top results",
+    '- web_search {"query":"...","provider":"auto"}: keyless DuckDuckGo, Ecosia, Google, and Mojeek search with automatic fallback',
     "- web_fetch {\"url\":\"https://example.com\"}: download the text contents of a URL",
     "- download_file {\"url\":\"https://example.com/file.zip\",\"path\":\"assets/file.zip\"}: save a URL to a workspace file",
     "- todo_write {\"text\":\"task\"}: update todo list",
@@ -4061,7 +4282,7 @@ function agentLoopPrompt(userPrompt: string, observations: string[], priorConver
     }`,
     agentExecutionMode === "plan"
       ? "PLAN MODE is ON. Do not modify the workspace. Use only read and search tools to investigate, then return a clear, numbered implementation plan with {\"final\":\"...\"}. Editing, moving, copying, pasting, and shell commands are disabled."
-      : "EDIT MODE is ON. You may modify the workspace with the available tools, and you should verify your changes when practical.",
+      : "EDIT MODE is ON. Do not stop after writing a plan. Modify the workspace with the available tools, continue through all safe in-scope steps, verify the result, and only then finish.",
     "Return exactly one JSON object. Do not wrap it in prose.",
     agentThinkingInstruction(),
     "To use a tool: {\"tool\":\"read\",\"args\":{\"path\":\"src/main.ts\"}}",
@@ -4074,6 +4295,7 @@ function agentLoopPrompt(userPrompt: string, observations: string[], priorConver
     "For artifact requests like games, apps, or pages, write complete runnable source code. Never write only the user request into a file.",
     "For standalone HTML/page/game artifacts, write to index.html or a clearly named root file like game.html unless the user explicitly names another path. Do not choose src/index.html by default.",
     "Do not just describe what you will do. If you intend to inspect, read, search, edit, or fix something, emit the matching tool call in this same reply. Saying \"I will inspect\" or \"I am fixing\" without a tool call does nothing. Only use {\"final\":...} once the work is actually done.",
+    "For a direct question, answer it fully with {\"final\":\"...\"}. Never return an empty response and never ask the user to say “continue”; continue the current task yourself until it is complete or an exact external blocker must be reported.",
     "You have NOT created, written, or edited any file until a tool observation in 'Steps taken this turn' confirms success (e.g. 'Wrote N bytes'). Never claim you created a file or finished the task unless such a confirmation is present. If asked to build something, your first action must be a write_to_file tool call with the full contents.",
     "If a previous observation says a write was blocked or a tool repeated, change strategy and produce a better implementation.",
     "Available tools:",
@@ -4119,7 +4341,9 @@ async function delegateToCodingAgent(agentName: string, prompt: string): Promise
 }
 
 function promptAsksForImplementation(prompt: string): boolean {
-  return /\b(write|create|build|make|implement|generate|fix|change|add)\b/i.test(prompt);
+  return /\b(write|create|build|make|implement|generate|fix|change|add|delete|remove|update|crie|criar|faça|fazer|conserte|corrija|corrigir|adicione|adicionar|altere|alterar|implemente|implementar|mude|mudar|remova|remover|exclua|excluir|apague|apagar|atualize|atualizar|gere|gerar)\b/i.test(
+    prompt,
+  );
 }
 
 // Detects a reply that claims a file/artifact was created or the task finished,
@@ -4129,18 +4353,6 @@ function claimsArtifactCompletion(text: string): boolean {
   const artifact = /\b(file|index\.html|\.html?|\.js|\.ts|\.css|\.py|game|code|app|page|website|script|project)\b/i.test(text);
   const runnable = /\b(you can (?:run|open|play|use)|open .* in (?:your|the) browser|run the (?:game|app|file))\b/i.test(text);
   return (claims && artifact) || runnable;
-}
-
-function shouldFinishAfterSuccessfulWrite(action: AgentModelAction, observation: string): boolean {
-  const tool = action.tool ?? "";
-  const writeTools = new Set(["write_to_file", "edit_file"]);
-  if (!writeTools.has(tool)) return false;
-  if (!requestLooksLikeArtifactCreation()) return false;
-  if (!/^Wrote \d+ bytes\b/.test(observation)) return false;
-  if (/Write blocked|denied|Tool error/i.test(observation)) return false;
-
-  const path = typeof action.args?.path === "string" ? action.args.path : "";
-  return !path || /\.(html|htm|js|ts|tsx|jsx|css|py|vue|svelte)$/i.test(path);
 }
 
 async function runAgentLoop(userPrompt: string): Promise<void> {
@@ -4154,6 +4366,7 @@ async function runAgentLoop(userPrompt: string): Promise<void> {
   let noActionStreak = 0;
   let didWrite = false;
   let hallucinatedFinals = 0;
+  const effectiveMaxSteps = Math.min(64, agentMaxSteps + Math.max(8, Math.ceil(agentMaxSteps / 2)));
 
   if (agentExecutionMode === "edit" && activeAgentProfile === "architect" && promptAsksForImplementation(userPrompt)) {
     setActiveAgentProfile("coder");
@@ -4174,12 +4387,19 @@ async function runAgentLoop(userPrompt: string): Promise<void> {
     }
   }
 
-  for (let step = 1; step <= agentMaxSteps; step += 1) {
+  for (let step = 1; step <= effectiveMaxSteps; step += 1) {
     if (agentAbort?.signal.aborted) return;
-    setAgentStatus(`Thinking with local server, step ${step}/${agentMaxSteps}`);
+    if (step === agentMaxSteps + 1) {
+      const continuation =
+        `The configured ${agentMaxSteps}-step pass ended before an explicit completion. ` +
+        `Continue autonomously using the safety reserve; do not repeat the plan and finish or report an exact blocker.`;
+      observations.push(continuation);
+      appendAgentMessage("tool", continuation);
+    }
+    setAgentStatus(`Thinking with local server, step ${step}/${effectiveMaxSteps}`);
     const completion = await postLocalCompletion(
       `${agentLoopPrompt(userPrompt, observations, priorConversation)}\n\nAssistant:`,
-      `Thinking · step ${step}/${agentMaxSteps}`,
+      `Thinking · step ${step}/${effectiveMaxSteps}`,
       agentActionJsonSchema,
     );
     const action = extractModelAction(completion);
@@ -4188,9 +4408,18 @@ async function runAgentLoop(userPrompt: string): Promise<void> {
       parseFailures += 1;
       // Surface what the model actually said so it is debuggable instead of hidden.
       const raw = cleanModelTextForDisplay(completion).trim();
+      if (raw && !promptAsksForImplementation(userPrompt)) {
+        appendAgentMessage("agent", raw);
+        setAgentStatus("Agent task complete");
+        return;
+      }
       appendAgentMessage("agent", raw ? raw.slice(0, 1500) : "(empty model reply)");
-      if (parseFailures >= 3) {
-        setAgentStatus("Agent stopped: could not parse a tool call after 3 tries");
+      if (parseFailures >= 5) {
+        const failure =
+          "The local model did not return a usable answer or tool action after five recovery attempts. " +
+          "The task was not marked complete; try a stronger model or inspect the raw replies above.";
+        appendAgentMessage("tool", failure);
+        setAgentStatus("Agent needs attention: unusable model responses");
         return;
       }
       const correction =
@@ -4238,15 +4467,14 @@ async function runAgentLoop(userPrompt: string): Promise<void> {
       // A message with no tool call is not a finished turn — only an explicit
       // {"final":...} ends it. Nudge the model to actually act (or to finish
       // explicitly) instead of stopping on narration like "Creating the file now".
-      if (noActionStreak < 4) {
-        const nudge =
-          'You wrote a message but took no action. If the task is not finished, reply with exactly one tool call now to do the work, e.g. {"tool":"write_to_file","args":{"path":"game.html","content":"<full file contents>"}}. If you are completely done, reply with {"final":"<answer>"}.';
-        appendAgentMessage("tool", nudge);
-        observations.push(`Step ${step}: ${nudge}`);
-        continue;
-      }
-      setAgentStatus("Agent task complete");
-      return;
+      const nudge =
+        noActionStreak < 4
+          ? 'You wrote a message but took no action. If the task is not finished, reply with exactly one tool call now to do the work, e.g. {"tool":"write_to_file","args":{"path":"game.html","content":"<full file contents>"}}. If you are completely done, reply with {"final":"<answer>"}.'
+          : 'You have repeatedly narrated without acting. Stop restating the plan. Emit one permitted tool call now, or return {"final":"<answer>"} only if the requested work is actually complete.';
+      appendAgentMessage("tool", nudge);
+      observations.push(`Step ${step}: ${nudge}`);
+      if (noActionStreak >= 4) noActionStreak = 0;
+      continue;
     }
     noActionStreak = 0;
 
@@ -4267,25 +4495,30 @@ async function runAgentLoop(userPrompt: string): Promise<void> {
       didWrite = true;
     }
 
-    if (shouldFinishAfterSuccessfulWrite(action, observation)) {
-      appendAgentMessage("agent", `Done. ${observation.split("\n")[0]}`);
-      setAgentStatus("Agent task complete");
-      return;
-    }
-
     if (action.tool === "attempt_completion") {
       setAgentStatus("Agent task complete");
       return;
     }
   }
 
-  appendAgentMessage("agent", `I reached the ${agentMaxSteps}-step limit for this turn. Tell me to continue and I'll keep going.`);
-  setAgentStatus("Agent paused after tool-step limit");
+  appendAgentMessage(
+    "agent",
+    `I used the full ${effectiveMaxSteps}-step safety budget without reaching a reliable completion. ` +
+      "The task is still open; review the latest tool result or increase Maximum steps before retrying.",
+  );
+  setAgentStatus("Agent paused at hard safety limit · task not complete");
 }
 
 function setAgentRunning(active: boolean) {
   agentRunActive = active;
   const button = document.getElementById("agent-run-command") as HTMLButtonElement | null;
+  const composer = document.querySelector<HTMLElement>("#app-view-agent .agent-chat-input-row");
+  const input = document.getElementById("agent-command-input") as HTMLTextAreaElement | null;
+  const loading = document.getElementById("agent-prompt-loading");
+  composer?.classList.toggle("is-loading", active);
+  composer?.setAttribute("aria-busy", String(active));
+  input?.setAttribute("aria-busy", String(active));
+  if (loading) loading.hidden = !active;
   if (button) {
     button.title = active ? "Stop" : "Run";
     button.setAttribute("aria-label", active ? "Stop" : "Run");
@@ -5126,14 +5359,14 @@ export function initAgent() {
   yoloMode = window.localStorage.getItem(agentYoloModeStorageKey) === "true";
   autoAccept = window.localStorage.getItem(agentAutoAcceptStorageKey) === "true";
   agentGoal = window.localStorage.getItem(agentGoalStorageKey) ?? "";
-  agentMode = (window.localStorage.getItem(agentModeStorageKey) as AgentMode | null) ?? "architect";
+  agentMode = (window.localStorage.getItem(agentModeStorageKey) as AgentMode | null) ?? "coder";
   activeAgentProfile =
     (window.localStorage.getItem(agentActiveProfileStorageKey) as AgentMode | null) ?? agentMode;
   agentThinkingLevel = normalizeThinkingLevel(window.localStorage.getItem(agentThinkingLevelStorageKey));
   agentExecutionMode =
     window.localStorage.getItem(agentExecutionModeStorageKey) === "plan" ? "plan" : "edit";
   if (!codingAgentProfiles.some((profile) => profile.id === activeAgentProfile)) {
-    activeAgentProfile = "architect";
+    activeAgentProfile = "coder";
   }
   agentMode = activeAgentProfile;
   autoCompact = window.localStorage.getItem(agentAutoCompactStorageKey) === "true";

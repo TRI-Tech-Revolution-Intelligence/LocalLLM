@@ -8,7 +8,7 @@ import type {
   AgentThinkingLevel,
 } from "./types";
 
-export const AGENT_PROFILE_SCHEMA_VERSION = 2 as const;
+export const AGENT_PROFILE_SCHEMA_VERSION = 3 as const;
 
 const agentModes = new Set<AgentMode>([
   "architect",
@@ -57,13 +57,13 @@ function boundedNumber(value: unknown, fallback: number, min: number, max: numbe
 }
 
 function normalizeRole(value: unknown): AgentMode {
-  return typeof value === "string" && agentModes.has(value as AgentMode) ? (value as AgentMode) : "architect";
+  return typeof value === "string" && agentModes.has(value as AgentMode) ? (value as AgentMode) : "coder";
 }
 
 function normalizeThinking(value: unknown): AgentThinkingLevel {
   return typeof value === "string" && thinkingLevels.has(value as AgentThinkingLevel)
     ? (value as AgentThinkingLevel)
-    : "disabled";
+    : "medium";
 }
 
 function normalizeExecutionMode(value: unknown): AgentExecutionMode {
@@ -99,29 +99,39 @@ export function createAgentProfile(
     executionMode: normalizeExecutionMode(overrides.executionMode),
     permissions: normalizePermissions(overrides.permissions),
     autoApprove: Boolean(overrides.autoApprove),
-    yoloMode: Boolean(overrides.yoloMode),
+    yoloMode: Boolean(overrides.yoloMode || overrides.autoApprove),
     autoCompact: Boolean(overrides.autoCompact),
-    temperature: boundedNumber(overrides.temperature, 0.7, 0, 2),
+    temperature: boundedNumber(overrides.temperature, 0.6, 0, 2),
     timeoutSeconds: boundedInteger(overrides.timeoutSeconds, 300, 10, 3600),
     retryCount: boundedInteger(overrides.retryCount, 1, 0, 5),
-    maxSteps: boundedInteger(overrides.maxSteps, 16, 1, 64),
+    maxSteps: boundedInteger(overrides.maxSteps, 32, 1, 64),
     createdAt: boundedInteger(overrides.createdAt, now, 0, Number.MAX_SAFE_INTEGER),
     updatedAt: boundedInteger(overrides.updatedAt, now, 0, Number.MAX_SAFE_INTEGER),
   };
 }
 
-function normalizeProfile(value: unknown, index: number, now = Date.now()): AgentProfile {
+function normalizeProfile(value: unknown, index: number, upgradeLegacyDefaults = false, now = Date.now()): AgentProfile {
   if (!value || typeof value !== "object") {
     throw new Error(`Profile ${index + 1} is not an object`);
   }
   const candidate = value as Partial<AgentProfile> & { mode?: string; instructions?: string; workingDirectory?: string };
+  const isLegacyDefault =
+    upgradeLegacyDefaults &&
+    stringValue(candidate.name, "Default").trim().toLocaleLowerCase() === "default" &&
+    normalizeRole(candidate.role ?? candidate.mode) === "architect" &&
+    normalizeThinking(candidate.thinkingLevel) === "disabled" &&
+    boundedNumber(candidate.temperature, 0.7, 0, 2) === 0.7 &&
+    boundedInteger(candidate.maxSteps, 16, 1, 64) === 16;
   return createAgentProfile(stringValue(candidate.name, `Imported Profile ${index + 1}`), {
     ...candidate,
     id: stringValue(candidate.id) || crypto.randomUUID(),
-    role: normalizeRole(candidate.role ?? candidate.mode),
+    role: isLegacyDefault ? "coder" : normalizeRole(candidate.role ?? candidate.mode),
     systemInstructions: stringValue(candidate.systemInstructions, stringValue(candidate.instructions)),
     taskInstructions: stringValue(candidate.taskInstructions),
     workspaceRoot: stringValue(candidate.workspaceRoot, stringValue(candidate.workingDirectory)),
+    thinkingLevel: isLegacyDefault ? "medium" : normalizeThinking(candidate.thinkingLevel),
+    temperature: isLegacyDefault ? 0.6 : candidate.temperature,
+    maxSteps: isLegacyDefault ? 32 : candidate.maxSteps,
   }, now);
 }
 
@@ -156,7 +166,10 @@ export function normalizeAgentProfileStore(value: unknown): AgentProfileStore {
       ? [candidate.profile]
       : [];
   if (rawProfiles.length === 0) throw new Error("Profile file contains no profiles");
-  const profiles = rawProfiles.map((profile, index) => normalizeProfile(profile, index));
+  const sourceSchemaVersion = boundedInteger(candidate.schemaVersion, 1, 1, AGENT_PROFILE_SCHEMA_VERSION);
+  const profiles = rawProfiles.map((profile, index) =>
+    normalizeProfile(profile, index, sourceSchemaVersion < AGENT_PROFILE_SCHEMA_VERSION),
+  );
   const ids = new Set<string>();
   for (const profile of profiles) {
     if (ids.has(profile.id)) profile.id = crypto.randomUUID();
@@ -180,14 +193,14 @@ export function normalizeAgentProfileStore(value: unknown): AgentProfileStore {
 
 export function createMigratedProfileStore(seed: LegacyAgentProfileSeed = {}): AgentProfileStore {
   const profile = createAgentProfile("Default", {
-    role: normalizeRole(seed.role),
+    role: seed.role == null ? "coder" : normalizeRole(seed.role),
     goal: stringValue(seed.goal),
     workspaceRoot: stringValue(seed.workspaceRoot),
-    thinkingLevel: normalizeThinking(seed.thinkingLevel),
+    thinkingLevel: seed.thinkingLevel == null ? "medium" : normalizeThinking(seed.thinkingLevel),
     executionMode: normalizeExecutionMode(seed.executionMode),
     permissions: normalizePermissions(seed.permissions),
     autoApprove: Boolean(seed.autoApprove),
-    yoloMode: Boolean(seed.yoloMode),
+    yoloMode: Boolean(seed.yoloMode || seed.autoApprove),
     autoCompact: Boolean(seed.autoCompact),
   });
   return {
