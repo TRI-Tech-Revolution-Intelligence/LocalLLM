@@ -99,7 +99,6 @@ struct ServerConfig {
     cache_type_k: String,
     cache_type_v: String,
     flash_attention: String,
-    kvu: String,
     enable_gpu_memory_options: bool,
     kv_offload: String,
     no_host: bool,
@@ -133,12 +132,11 @@ struct ServerConfig {
     spec_ngram_mod_n_match: u32,
     spec_ngram_mod_n_min: u32,
     spec_ngram_mod_n_max: u32,
-    spec_draft_model_path: String,
     no_cpu_moe: u32,
     #[serde(default = "default_true")]
     enable_reasoning_options: bool,
-    #[serde(default)]
-    reasoning_preserve: String,
+    #[serde(default = "default_true")]
+    preserve_thinking: bool,
     reasoning_format: String,
     reasoning_budget: String,
     chat_template_kwargs: String,
@@ -171,7 +169,6 @@ impl Default for ServerConfig {
             cache_type_k: "q8_0".into(),
             cache_type_v: "q8_0".into(),
             flash_attention: String::new(),
-            kvu: String::new(),
             enable_gpu_memory_options: false,
             kv_offload: String::new(),
             no_host: false,
@@ -203,10 +200,9 @@ impl Default for ServerConfig {
             spec_ngram_mod_n_match: 0,
             spec_ngram_mod_n_min: 0,
             spec_ngram_mod_n_max: 0,
-            spec_draft_model_path: String::new(),
             no_cpu_moe: 0,
             enable_reasoning_options: true,
-            reasoning_preserve: "flag".into(),
+            preserve_thinking: true,
             reasoning_format: String::new(),
             reasoning_budget: String::new(),
             chat_template_kwargs: "{\"preserve_thinking\": true}".into(),
@@ -274,7 +270,6 @@ struct ServerLaunchConfig {
     cache_type_k: String,
     cache_type_v: String,
     flash_attention: String,
-    kvu: String,
     enable_gpu_memory_options: bool,
     kv_offload: String,
     no_host: bool,
@@ -308,11 +303,11 @@ struct ServerLaunchConfig {
     spec_ngram_mod_n_match: u32,
     spec_ngram_mod_n_min: u32,
     spec_ngram_mod_n_max: u32,
-    spec_draft_model_path: String,
     no_cpu_moe: u32,
     #[serde(default = "default_true")]
     enable_reasoning_options: bool,
-    reasoning_preserve: String,
+    #[serde(default = "default_true")]
+    preserve_thinking: bool,
     reasoning_format: String,
     reasoning_budget: String,
     chat_template_kwargs: String,
@@ -347,7 +342,6 @@ impl Default for ServerLaunchConfig {
             cache_type_k: server.cache_type_k,
             cache_type_v: server.cache_type_v,
             flash_attention: server.flash_attention,
-            kvu: server.kvu,
             enable_gpu_memory_options: server.enable_gpu_memory_options,
             kv_offload: server.kv_offload,
             no_host: server.no_host,
@@ -379,10 +373,9 @@ impl Default for ServerLaunchConfig {
             spec_ngram_mod_n_match: server.spec_ngram_mod_n_match,
             spec_ngram_mod_n_min: server.spec_ngram_mod_n_min,
             spec_ngram_mod_n_max: server.spec_ngram_mod_n_max,
-            spec_draft_model_path: server.spec_draft_model_path,
             no_cpu_moe: server.no_cpu_moe,
             enable_reasoning_options: server.enable_reasoning_options,
-            reasoning_preserve: server.reasoning_preserve,
+            preserve_thinking: server.preserve_thinking,
             reasoning_format: server.reasoning_format,
             reasoning_budget: server.reasoning_budget,
             chat_template_kwargs: server.chat_template_kwargs,
@@ -553,7 +546,6 @@ struct BenchmarkRequest {
     cache_type_k: String,
     cache_type_v: String,
     flash_attention: String,
-    kvu: String,
     enable_gpu_memory_options: bool,
     #[serde(default, alias = "devices")]
     device: String,
@@ -590,7 +582,6 @@ impl Default for BenchmarkRequest {
             cache_type_k: "q8_0".into(),
             cache_type_v: "q8_0".into(),
             flash_attention: String::new(),
-            kvu: String::new(),
             enable_gpu_memory_options: false,
             device: String::new(),
             kv_offload: String::new(),
@@ -2543,9 +2534,8 @@ fn make_model_entry_with_metadata(
         return Err(format!("{} is not a file", path.display()));
     }
 
-    let normalized = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let path_string = normalized.to_string_lossy().into_owned();
-    let name = normalized
+    let path_string = normalized_path_string(path);
+    let name = path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("model.gguf")
@@ -2572,8 +2562,10 @@ fn stable_id(value: &str) -> String {
 }
 
 fn normalized_path_string(path: &Path) -> String {
-    let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let s = resolved.to_string_lossy().into_owned();
+    let s = fs::canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
     s.strip_prefix("\\\\?\\").map(str::to_owned).unwrap_or(s)
 }
 
@@ -2594,6 +2586,23 @@ fn model_cache_scope(model_dir: &str, manual_models: &[ModelEntry]) -> (String, 
     (normalized_model_dir, manual_model_paths)
 }
 
+fn paths_equal(left: &str, right: &str) -> bool {
+    let left_clean = left.strip_prefix("\\\\?\\").unwrap_or(left).trim_end_matches(['/', '\\']);
+    let right_clean = right.strip_prefix("\\\\?\\").unwrap_or(right).trim_end_matches(['/', '\\']);
+    if cfg!(windows) {
+        left_clean.eq_ignore_ascii_case(right_clean)
+    } else {
+        left_clean == right_clean
+    }
+}
+
+fn path_lists_equal(left: &[String], right: &[String]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter().zip(right.iter()).all(|(a, b)| paths_equal(a, b))
+}
+
 fn read_model_cache(
     cache_path: &Path,
     model_dir: &str,
@@ -2612,10 +2621,22 @@ fn read_model_cache(
         Err(_) => return Ok(Vec::new()),
     };
     let (model_dir, manual_model_paths) = model_cache_scope(model_dir, manual_models);
-    let cached_model_dir = cache.model_dir.strip_prefix("\\\\?\\").unwrap_or(&cache.model_dir).to_string();
+    let cached_manual_paths = cache
+        .manual_model_paths
+        .iter()
+        .map(|p| p.strip_prefix("\\\\?\\").unwrap_or(p).to_string())
+        .collect::<Vec<_>>();
 
-    if cached_model_dir == model_dir && cache.manual_model_paths == manual_model_paths {
-        Ok(dedupe_models(cache.models))
+    if paths_equal(&cache.model_dir, &model_dir) && path_lists_equal(&cached_manual_paths, &manual_model_paths) {
+        let models = cache
+            .models
+            .into_iter()
+            .map(|mut entry| {
+                entry.path = entry.path.strip_prefix("\\\\?\\").unwrap_or(&entry.path).to_string();
+                entry
+            })
+            .collect();
+        Ok(dedupe_models(models))
     } else {
         Ok(Vec::new())
     }
@@ -2657,35 +2678,46 @@ fn collect_models(
     directory: &Path,
     output: &mut Vec<ModelEntry>,
     throttle: &mut ScanThrottle,
+    visited_dirs: &mut HashSet<PathBuf>,
 ) -> Result<(), String> {
     if !directory.exists() {
         return Ok(());
     }
 
-    for entry in fs::read_dir(directory).map_err(|error| {
-        format!(
-            "Unable to read model directory {}: {error}",
-            directory.display()
-        )
-    })? {
-        throttle.bump();
-        let entry =
-            entry.map_err(|error| format!("Unable to read model directory entry: {error}"))?;
-        let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|error| format!("Unable to inspect {}: {error}", path.display()))?;
+    let canonical_dir = fs::canonicalize(directory).unwrap_or_else(|_| directory.to_path_buf());
+    if !visited_dirs.insert(canonical_dir) {
+        return Ok(());
+    }
 
-        if file_type.is_dir() {
-            collect_models(&path, output, throttle)?;
-        } else if file_type.is_file()
+    let read_dir = match fs::read_dir(directory) {
+        Ok(read_dir) => read_dir,
+        Err(_) => return Ok(()),
+    };
+
+    for entry in read_dir {
+        throttle.bump();
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        let metadata = match fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+
+        if metadata.is_dir() {
+            collect_models(&path, output, throttle, visited_dirs)?;
+        } else if metadata.is_file()
             && path
                 .extension()
                 .and_then(|extension| extension.to_str())
                 .map(|extension| extension.eq_ignore_ascii_case("gguf"))
                 .unwrap_or(false)
         {
-            output.push(make_model_entry_without_metadata(&path, "directory")?);
+            if let Ok(entry) = make_model_entry_without_metadata(&path, "directory") {
+                output.push(entry);
+            }
         }
     }
 
@@ -2698,6 +2730,7 @@ fn scan_models_blocking(
 ) -> Result<Vec<ModelEntry>, String> {
     let mut models = Vec::new();
     let mut throttle = ScanThrottle::default();
+    let mut visited_dirs = HashSet::new();
 
     for model in manual_models {
         throttle.bump();
@@ -2707,7 +2740,12 @@ fn scan_models_blocking(
     }
 
     if !model_dir.trim().is_empty() {
-        collect_models(Path::new(model_dir.trim()), &mut models, &mut throttle)?;
+        collect_models(
+            Path::new(model_dir.trim()),
+            &mut models,
+            &mut throttle,
+            &mut visited_dirs,
+        )?;
     }
 
     Ok(dedupe_models(models))
@@ -2718,7 +2756,8 @@ fn dedupe_models(models: Vec<ModelEntry>) -> Vec<ModelEntry> {
     let mut deduped = Vec::new();
 
     for model in models {
-        let key = model.path.to_ascii_lowercase();
+        let clean_path = model.path.strip_prefix("\\\\?\\").unwrap_or(&model.path);
+        let key = clean_path.replace('/', "\\").to_ascii_lowercase();
         if seen.insert(key) {
             deduped.push(model);
         }
@@ -2822,7 +2861,6 @@ fn build_server_args(config: &ServerLaunchConfig) -> Result<Vec<String>, String>
         push_non_empty_arg(&mut args, "-ctk", &config.cache_type_k);
         push_non_empty_arg(&mut args, "-ctv", &config.cache_type_v);
         push_non_empty_arg(&mut args, "-fa", &config.flash_attention);
-        push_non_empty_arg(&mut args, "-kvu", &config.kvu);
     }
     if config.enable_gpu_memory_options {
         push_toggle_arg(
@@ -2902,29 +2940,18 @@ fn build_server_args(config: &ServerLaunchConfig) -> Result<Vec<String>, String>
             args.push("--spec-ngram-mod-n-max".into());
             args.push(config.spec_ngram_mod_n_max.to_string());
         }
-        push_non_empty_arg(&mut args, "-md", &config.spec_draft_model_path);
     }
     if config.enable_reasoning_options {
         push_non_empty_arg(&mut args, "--reasoning-format", &config.reasoning_format);
         push_non_empty_arg(&mut args, "--reasoning-budget", &config.reasoning_budget);
-        match config.reasoning_preserve.as_str() {
-            "flag" => {
-                args.push("--reasoning-preserve".into());
-            }
-            "chat-template" => {
-                let chat_template_kwargs =
-                    if config.chat_template_kwargs.trim().is_empty() {
-                        "{\"preserve_thinking\": true}"
-                    } else {
-                        config.chat_template_kwargs.trim()
-                    };
-                push_non_empty_arg(&mut args, "--chat-template-kwargs", chat_template_kwargs);
-            }
-            _ => {
-                if !config.chat_template_kwargs.trim().is_empty() {
-                    push_non_empty_arg(&mut args, "--chat-template-kwargs", config.chat_template_kwargs.trim());
-                }
-            }
+        let chat_template_kwargs =
+            if config.preserve_thinking && config.chat_template_kwargs.trim().is_empty() {
+                "{\"preserve_thinking\": true}"
+            } else {
+                config.chat_template_kwargs.trim()
+            };
+        if config.preserve_thinking || !chat_template_kwargs.is_empty() {
+            push_non_empty_arg(&mut args, "--chat-template-kwargs", chat_template_kwargs);
         }
         push_non_empty_arg(&mut args, "-rea", &config.reasoning);
     }
@@ -3044,7 +3071,6 @@ fn build_benchmark_args(request: &BenchmarkRequest) -> Result<Vec<String>, Strin
         push_non_empty_arg(&mut args, "-ctk", &request.cache_type_k);
         push_non_empty_arg(&mut args, "-ctv", &request.cache_type_v);
         push_non_empty_arg(&mut args, "-fa", &request.flash_attention);
-        push_non_empty_arg(&mut args, "-kvu", &request.kvu);
     }
     if request.enable_gpu_memory_options {
         push_toggle_arg(

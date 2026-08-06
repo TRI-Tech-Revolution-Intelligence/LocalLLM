@@ -585,7 +585,7 @@ async function run() {
     await delay(250);
     await expectTextIncludes(page, "#command-preview", "--tools all", "tools-all flag");
 
-    await page.locator("#preserve-thinking").uncheck();
+    await page.locator("#enable-reasoning-options").uncheck();
     await delay(250);
     const commandWithoutPreserve = await page.locator("#command-preview").textContent();
     if (commandWithoutPreserve?.includes("preserve_thinking")) {

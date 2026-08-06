@@ -564,12 +564,11 @@ function readServerConfig(): ServerConfig {
     cpuMoe: checked("cpu-moe"),
     noCpuMoe: numberValue("no-cpu-moe", 0),
     enableReasoningOptions: checked("enable-reasoning-options"),
+    preserveThinking: checked("enable-reasoning-options") && (value("reasoning-preserve") === "chat-template" || value("reasoning-preserve") === "flag" || Boolean(value("chat-template-kwargs").trim())),
     reasoningPreserve: value("reasoning-preserve"),
     reasoningFormat: value("reasoning-format"),
     reasoningBudget: value("reasoning-budget"),
-    chatTemplateKwargs: value("reasoning-preserve") === "chat-template"
-      ? value("chat-template-kwargs") || preserveThinkingDefault
-      : "",
+    chatTemplateKwargs: value("chat-template-kwargs") || preserveThinkingDefault,
     reasoning: value("reasoning"),
     enableMultimodalOptions: checked("enable-multimodal-options"),
     mmproj: value("mmproj"),
@@ -765,8 +764,23 @@ function dedupeAndSortModels(nextModels: ModelEntry[]): ModelEntry[] {
   return deduped.sort((left, right) => left.name.localeCompare(right.name));
 }
 
+function cleanPath(path: string): string {
+  if (!path) return "";
+  let s = path.trim();
+  if (s.startsWith("\\\\?\\")) {
+    s = s.slice(4);
+  }
+  return s.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+}
+
+function samePath(a: string, b: string): boolean {
+  const cleanA = cleanPath(a);
+  const cleanB = cleanPath(b);
+  return Boolean(cleanA && cleanB && cleanA === cleanB);
+}
+
 function modelExists(path: string): boolean {
-  return models.some((model) => model.path === path);
+  return models.some((model) => samePath(model.path, path));
 }
 
 function selectedModelPath(preferredPath?: string): string {
@@ -807,7 +821,7 @@ function updateSelectedModelUi() {
     row.classList.remove("selected");
   }
   const selectedRow = Array.from(modelList.querySelectorAll<HTMLButtonElement>(".model-row")).find(
-    (row) => row.dataset.path === activeModelPath,
+    (row) => row.dataset.path && samePath(row.dataset.path, activeModelPath),
   );
   selectedRow?.classList.add("selected");
   updateProfileStatus();
@@ -900,7 +914,7 @@ function setBenchmarkMode(mode: BenchmarkMode) {
 function createModelRow(model: ModelEntry): HTMLButtonElement {
   const row = document.createElement("button");
   row.type = "button";
-  row.className = `model-row ${model.path === activeModelPath ? "selected" : ""}`;
+  row.className = `model-row ${samePath(model.path, activeModelPath) ? "selected" : ""}`;
   row.dataset.path = model.path;
 
   const main = document.createElement("span");
@@ -1046,11 +1060,11 @@ function buildLaunchConfig() {
 }
 
 function selectedModel(): ModelEntry | undefined {
-  return models.find((model) => model.path === activeModelPath);
+  return models.find((model) => samePath(model.path, activeModelPath));
 }
 
 function selectedModelProfileIndex(): number {
-  return config.modelProfiles.findIndex((profile) => profile.modelPath === activeModelPath);
+  return config.modelProfiles.findIndex((profile) => samePath(profile.modelPath, activeModelPath));
 }
 
 function activeProfileIndex(): number {
@@ -1091,8 +1105,8 @@ function nextProfileName(model: ModelEntry): string {
 async function ensureModelDefaultProfiles() {
   if (models.length === 0) return;
 
-  const profiledModelPaths = new Set(config.modelProfiles.map((profile) => profile.modelPath));
-  const missingModels = models.filter((model) => !profiledModelPaths.has(model.path));
+  const profiledModelPaths = new Set(config.modelProfiles.map((profile) => cleanPath(profile.modelPath)));
+  const missingModels = models.filter((model) => !profiledModelPaths.has(cleanPath(model.path)));
   if (missingModels.length === 0) return;
 
   const modelProfiles = [
@@ -1122,7 +1136,7 @@ function updateProfileSelector(selectedIndex: number) {
   config.modelProfiles.forEach((profile, index) => {
     const option = document.createElement("option");
     option.value = `profile:${index}`;
-    option.textContent = profile.name || models.find((model) => model.path === profile.modelPath)?.name || profile.modelPath;
+    option.textContent = profile.name || models.find((model) => samePath(model.path, profile.modelPath))?.name || profile.modelPath;
     selector.append(option);
   });
 
@@ -1154,7 +1168,7 @@ function updateProfileStatus() {
       : profile?.name ?? model.name
     : "";
   const profileModelName = profile
-    ? models.find((entry) => entry.path === profile.modelPath)?.name ?? profile.modelPath
+    ? models.find((entry) => samePath(entry.path, profile.modelPath))?.name ?? profile.modelPath
     : "";
   if (!model) {
     profileStatus.textContent = "No model selected";
@@ -1375,7 +1389,7 @@ async function addManualModel() {
   if (typeof selected !== "string") return;
 
   const model = await invoke<ModelEntry>("model_from_path", { path: selected });
-  if (!config.manualModels.some((entry) => entry.path === model.path)) {
+  if (!config.manualModels.some((entry) => samePath(entry.path, model.path))) {
     config.manualModels.push(model);
     config = await invoke<AppConfig>("save_config", { config });
   }
@@ -1731,7 +1745,7 @@ async function ensureModelMetadata(model: ModelEntry) {
   try {
     const metadata = await invoke<GgufModelMetadata | null>("load_model_metadata", { path: model.path });
     metadataLoaded.add(model.path);
-    const current = models.find((entry) => entry.path === model.path);
+    const current = models.find((entry) => samePath(entry.path, model.path));
     if (current) {
       current.metadata = metadata;
     }
@@ -1747,7 +1761,7 @@ async function ensureModelMetadata(model: ModelEntry) {
 }
 
 function updateVramEstimate() {
-  const model = models.find((entry) => entry.path === activeModelPath);
+  const model = models.find((entry) => samePath(entry.path, activeModelPath));
   if (!model) {
     vramTotal.textContent = "VRAM estimate: no model";
     vramDetail.textContent = "Pick a GGUF model to estimate.";

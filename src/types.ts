@@ -76,6 +76,7 @@ export interface ServerConfig {
   specDraftModelPath: string;
   noCpuMoe: number;
   enableReasoningOptions: boolean;
+  preserveThinking?: boolean;
   reasoningPreserve: string;
   reasoningFormat: string;
   reasoningBudget: string;

@@ -167,7 +167,7 @@ export const defaultServerConfig: ServerConfig = {
   specDraftModelPath: "",
   noCpuMoe: 0,
   enableReasoningOptions: true,
-  reasoningPreserve: "flag",
+  reasoningPreserve: "chat-template",
   reasoningFormat: "",
   reasoningBudget: "",
   chatTemplateKwargs: preserveThinkingDefault,
