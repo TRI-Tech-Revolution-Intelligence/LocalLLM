@@ -18,6 +18,9 @@ import {
   benchmarkPrefillTargets,
   benchmarkSettingsStorageKey,
   defaultServerConfig,
+  evalBenchmarkDatasets,
+  evalBenchmarkLabels,
+  evalSettingsStorageKey,
   minLeftPaneWidth,
   minRightPaneWidth,
   paneWidthStorageKey,
@@ -31,12 +34,17 @@ import { initWindowControls } from "./window-controls";
 import type {
   AppConfig,
   AppTab,
+  BenchmarkMode,
   BenchmarkPrefillResult,
   BenchmarkPreset,
   BenchmarkRunResult,
   BenchmarkSettings,
   CommandOutput,
   DownloadRequest,
+  EvalBenchmarkResult,
+  EvalBenchmarkSettings,
+  EvalBenchmarkType,
+  EvalSampleResult,
   GgufModelMetadata,
   HfModelSort,
   HfModelSummary,
@@ -82,6 +90,15 @@ const benchmarkGenerateTokensPerSecond = $("benchmark-generate-tokens-per-second
 const benchmarkTotalTime = $("benchmark-total-time");
 const benchmarkOutputTokens = $("benchmark-output-tokens");
 const benchmarkShareSummary = $("benchmark-share-summary") as HTMLTextAreaElement;
+const benchmarkPerformanceSettings = $("benchmark-performance-settings");
+const benchmarkEvaluationSettings = $("benchmark-evaluation-settings");
+const evalResults = $("eval-results");
+const evalScorePercent = $("eval-score-percent");
+const evalPassedCount = $("eval-passed-count");
+const evalTotalCount = $("eval-total-count");
+const evalElapsedTime = $("eval-elapsed-time");
+const evalSamplesContainer = $("eval-samples-container");
+const evalSamplesList = $("eval-samples-list");
 const vramTotal = $("vram-total");
 const vramDetail = $("vram-detail");
 const downloadOutput = $("download-output");
@@ -123,6 +140,8 @@ let selectedProfileOverrideIndex: number | null = null;
 let creatingProfile = false;
 let benchmarkAbortController: AbortController | null = null;
 let benchmarkHistory: BenchmarkRunResult[] = [];
+let evalAbortController: AbortController | null = null;
+let evalBenchmarkHistory: EvalBenchmarkResult[] = [];
 const modelLoadingTasks = new Set<string>();
 const metadataLoads = new Set<string>();
 const metadataLoaded = new Set<string>();
@@ -509,6 +528,7 @@ function readServerConfig(): ServerConfig {
     cacheTypeK: value("cache-type-k"),
     cacheTypeV: value("cache-type-v"),
     flashAttention: value("flash-attention"),
+    kvu: value("kvu"),
     enableGpuMemoryOptions: checked("enable-gpu-memory-options"),
     kvOffload: value("kv-offload"),
     noHost: checked("no-host"),
@@ -540,13 +560,14 @@ function readServerConfig(): ServerConfig {
     specNgramModNMatch: numberValue("spec-ngram-mod-n-match", 0),
     specNgramModNMin: numberValue("spec-ngram-mod-n-min", 0),
     specNgramModNMax: numberValue("spec-ngram-mod-n-max", 0),
+    specDraftModelPath: value("spec-draft-model-path"),
     cpuMoe: checked("cpu-moe"),
     noCpuMoe: numberValue("no-cpu-moe", 0),
     enableReasoningOptions: checked("enable-reasoning-options"),
-    preserveThinking: checked("preserve-thinking"),
+    reasoningPreserve: value("reasoning-preserve"),
     reasoningFormat: value("reasoning-format"),
     reasoningBudget: value("reasoning-budget"),
-    chatTemplateKwargs: checked("preserve-thinking")
+    chatTemplateKwargs: value("reasoning-preserve") === "chat-template"
       ? value("chat-template-kwargs") || preserveThinkingDefault
       : "",
     reasoning: value("reasoning"),
@@ -586,6 +607,7 @@ function hydrateServerUi(server: ServerConfig) {
   setValue("cache-type-k", server.cacheTypeK);
   setValue("cache-type-v", server.cacheTypeV);
   setValue("flash-attention", server.flashAttention);
+  setValue("kvu", server.kvu ?? "");
   setChecked("enable-gpu-memory-options", server.enableGpuMemoryOptions);
   setValue("kv-offload", server.kvOffload ?? "");
   setChecked("no-host", server.noHost ?? false);
@@ -617,13 +639,14 @@ function hydrateServerUi(server: ServerConfig) {
   setValue("spec-ngram-mod-n-match", server.specNgramModNMatch);
   setValue("spec-ngram-mod-n-min", server.specNgramModNMin);
   setValue("spec-ngram-mod-n-max", server.specNgramModNMax);
+  setValue("spec-draft-model-path", server.specDraftModelPath);
   setChecked("cpu-moe", server.cpuMoe ?? false);
   setValue("no-cpu-moe", server.noCpuMoe);
   setChecked("enable-reasoning-options", server.enableReasoningOptions);
-  setChecked("preserve-thinking", server.preserveThinking ?? true);
+  setValue("reasoning-preserve", server.reasoningPreserve ?? "flag");
   setValue("reasoning-format", server.reasoningFormat);
   setValue("reasoning-budget", server.reasoningBudget);
-  setValue("chat-template-kwargs", server.chatTemplateKwargs || (server.preserveThinking === false ? "" : preserveThinkingDefault));
+  setValue("chat-template-kwargs", server.reasoningPreserve === "chat-template" ? (server.chatTemplateKwargs || preserveThinkingDefault) : "");
   setValue("reasoning", server.reasoning);
   setChecked("enable-multimodal-options", server.enableMultimodalOptions);
   setValue("mmproj", server.mmproj);
@@ -648,6 +671,8 @@ function hydrateUi() {
   setValue("hf-workers", 8);
   hydrateServerUi(config.server);
   hydrateBenchmarkSettings();
+  hydrateEvalSettings();
+  setBenchmarkMode("performance");
   resetBenchmarkResults();
   syncBenchmarkServerState();
 }
@@ -830,6 +855,46 @@ function hydrateBenchmarkSettings() {
   } catch {
     window.localStorage.removeItem(benchmarkSettingsStorageKey);
   }
+}
+
+function readEvalSettings(): EvalBenchmarkSettings {
+  return {
+    benchmarkType: (value("eval-benchmark-type") as EvalBenchmarkType) || "humaneval",
+    sampleCount: value("eval-sample-count") || "5",
+    temperature: value("eval-temperature") || "0.2",
+  };
+}
+
+function hydrateEvalSettings() {
+  const raw = window.localStorage.getItem(evalSettingsStorageKey);
+  setValue("eval-benchmark-type", "humaneval");
+  setValue("eval-sample-count", "5");
+  setValue("eval-temperature", "0.2");
+
+  if (!raw) {
+    return;
+  }
+
+  try {
+    const settings = JSON.parse(raw) as Partial<EvalBenchmarkSettings>;
+    if (settings.benchmarkType) setValue("eval-benchmark-type", settings.benchmarkType);
+    if (settings.sampleCount) setValue("eval-sample-count", settings.sampleCount);
+    if (settings.temperature) setValue("eval-temperature", settings.temperature);
+  } catch {
+    window.localStorage.removeItem(evalSettingsStorageKey);
+  }
+}
+
+function setBenchmarkMode(mode: BenchmarkMode) {
+  const isEval = mode === "evaluation";
+  benchmarkPerformanceSettings.hidden = isEval;
+  benchmarkEvaluationSettings.hidden = !isEval;
+  benchmarkResults.hidden = isEval;
+  evalResults.hidden = !isEval;
+  evalSamplesContainer.hidden = isEval;
+  $("benchmark-visual-grid").hidden = !isEval;
+  $("benchmark-share-panel").hidden = isEval;
+  $("benchmark-transcript").hidden = isEval;
 }
 
 function createModelRow(model: ModelEntry): HTMLButtonElement {
@@ -1288,6 +1353,19 @@ async function chooseMmproj() {
   }
 }
 
+async function chooseDraftModel() {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "GGUF", extensions: ["gguf"] }],
+    defaultPath: value("spec-draft-model-path") || value("model-dir") || undefined,
+  });
+  if (typeof selected === "string") {
+    setValue("spec-draft-model-path", selected);
+    await saveConfig("Draft model path saved");
+    schedulePreview();
+  }
+}
+
 async function addManualModel() {
   const selected = await open({
     multiple: false,
@@ -1348,17 +1426,19 @@ function applyAdvancedPreset() {
   setValue("spec-draft-p-split", "");
   setChecked("no-mmap", false);
   setChecked("mlock", false);
+  setValue("kvu", "");
   setValue("batch-size", 0);
   setValue("ubatch-size", 0);
   setValue("parallel", -1);
   setValue("spec-ngram-mod-n-match", 0);
   setValue("spec-ngram-mod-n-min", 0);
   setValue("spec-ngram-mod-n-max", 0);
+  setValue("spec-draft-model-path", "");
   setChecked("cpu-moe", false);
   setValue("no-cpu-moe", 0);
   setValue("reasoning-format", "");
   setValue("reasoning-budget", "");
-  setChecked("preserve-thinking", true);
+  setValue("reasoning-preserve", "flag");
   setValue("chat-template-kwargs", preserveThinkingDefault);
   setValue("reasoning", "");
   setValue("mmproj", "");
@@ -1749,7 +1829,7 @@ function updateCommandHelper() {
     notes.push(`speculative decoding: ${value("spec-type")}`);
   }
   if (checked("enable-reasoning-options")) {
-    const reasoningNotes = [value("reasoning") && `reasoning ${value("reasoning")}`, value("reasoning-budget") && `budget ${value("reasoning-budget")}`, checked("preserve-thinking") && "preserve thinking"].filter(Boolean);
+    const reasoningNotes = [value("reasoning") && `reasoning ${value("reasoning")}`, value("reasoning-budget") && `budget ${value("reasoning-budget")}`, value("reasoning-preserve") && `preserve ${value("reasoning-preserve")}`].filter(Boolean);
     if (reasoningNotes.length) notes.push(`chat reasoning: ${reasoningNotes.join(", ")}`);
   }
   if (checked("enable-multimodal-options") && value("mmproj")) {
@@ -1783,10 +1863,11 @@ function syncOptionalGroups() {
 }
 
 function syncPreserveThinking() {
-  const enabled = checked("enable-reasoning-options") && checked("preserve-thinking");
+  const enabled = checked("enable-reasoning-options");
+  const method = value("reasoning-preserve");
   const input = $("chat-template-kwargs") as HTMLTextAreaElement;
-  input.disabled = !enabled;
-  if (enabled && !input.value.trim()) {
+  input.disabled = !enabled || method !== "chat-template";
+  if (enabled && method === "chat-template" && !input.value.trim()) {
     input.value = preserveThinkingDefault;
   }
 }
@@ -1826,7 +1907,7 @@ function benchmarkBaseUrl(): string {
 
 function syncBenchmarkServerState() {
   const button = $("run-benchmark") as HTMLButtonElement;
-  const isRunning = benchmarkAbortController !== null;
+  const isRunning = benchmarkAbortController !== null || evalAbortController !== null;
   const url = benchmarkBaseUrl();
   benchmarkStatus.textContent = server.running ? `Ready at ${url}` : "Server offline";
   button.disabled = !server.running || isRunning;
@@ -2199,6 +2280,11 @@ async function runBenchmarkRequest(
 }
 
 async function runBenchmark() {
+  const mode = (value("benchmark-mode") as BenchmarkMode) || "performance";
+  if (mode === "evaluation") {
+    return runEvalBenchmark();
+  }
+
   if (!server.running) {
     setMessage("Start llama-server before running the benchmark", "warn");
     syncBenchmarkServerState();
@@ -2246,9 +2332,217 @@ async function runBenchmark() {
   }
 }
 
+
+async function saveEvalSettings() {
+  window.localStorage.setItem(evalSettingsStorageKey, JSON.stringify(readEvalSettings()));
+  setMessage("Evaluation settings saved", "ok");
+}
 async function saveBenchmarkSettings() {
   window.localStorage.setItem(benchmarkSettingsStorageKey, JSON.stringify(readBenchmarkSettings()));
   setMessage("Benchmark settings saved", "ok");
+}
+
+function scorePythonSample(actual: string, expected: string): boolean {
+  const actualMatch = actual.match(/def\s+\w+\s*\([^)]*\)[\s:]/s);
+  const expectedMatch = expected.match(/def\s+\w+\s*\([^)]*\)[\s:]/s);
+  return Boolean(actualMatch && expectedMatch);
+}
+
+function scoreGsm8kSample(actual: string, expected: string): boolean {
+  const actualMatch = actual.match(/[\d]+\.?[\d]*/);
+  const actualNum = actualMatch ? Number(actualMatch[0]) : NaN;
+  const expectedNum = Number(expected.trim());
+  if (isNaN(actualNum) || isNaN(expectedNum)) return false;
+  return Math.abs(actualNum - expectedNum) < 0.01;
+}
+
+function scoreMultipleChoiceSample(actual: string, expected: string): boolean {
+  const actualMatch = actual.match(/[A-D]/i);
+  return Boolean(actualMatch && actualMatch[0].toUpperCase() === expected.trim().toUpperCase());
+}
+
+function scoreTruthfulqaSample(actual: string, expected: string): boolean {
+  return actual.toLowerCase().trim().includes(expected.toLowerCase().trim());
+}
+
+async function runEvalBenchmark() {
+  if (!server.running) {
+    setMessage("Start llama-server before running the evaluation", "warn");
+    syncBenchmarkServerState();
+    return;
+  }
+
+  resetEvalResults();
+  const controller = new AbortController();
+  evalAbortController = controller;
+  syncBenchmarkServerState();
+
+  try {
+    const settings = readEvalSettings();
+    const dataset = evalBenchmarkDatasets[settings.benchmarkType] || [];
+    const sampleCount = Math.min(dataset.length, Math.max(1, Number(settings.sampleCount) || dataset.length));
+    const temperature = Math.max(0, Math.min(2, Number(settings.temperature) || 0.2));
+    const baseUrl = benchmarkBaseUrl();
+
+    const scorer = getScorerForBenchmark(settings.benchmarkType);
+    const samples: EvalSampleResult[] = [];
+    const startedAt = performance.now();
+
+    appendBenchmarkLog(`Evaluation: ${evalBenchmarkLabels[settings.benchmarkType]}`);
+    appendBenchmarkLog(`Samples: ${sampleCount} / Temperature: ${temperature}`);
+
+    for (let i = 0; i < sampleCount; i++) {
+      if (controller.signal.aborted) break;
+
+      const sample = dataset[i];
+      appendBenchmarkLog(`Sample ${i + 1}/${sampleCount}...`);
+
+      try {
+        const result = await requestEvalCompletion(sample.prompt, temperature, baseUrl, controller.signal);
+        const passed = scorer(result, sample.answer);
+
+        samples.push({
+          index: i + 1,
+          prompt: sample.prompt,
+          expected: sample.answer,
+          actual: result,
+          passed,
+        });
+
+        appendBenchmarkLog(`  ${passed ? "PASS" : "FAIL"}`);
+        updateEvalProgress(samples);
+      } catch (err) {
+        samples.push({
+          index: i + 1,
+          prompt: sample.prompt,
+          expected: sample.answer,
+          actual: String(err),
+          passed: false,
+        });
+        appendBenchmarkLog(`  ERROR: ${err}`);
+      }
+    }
+
+    const elapsedMs = performance.now() - startedAt;
+    const passedSamples = samples.filter(s => s.passed).length;
+    const score = samples.length > 0 ? (passedSamples / samples.length) * 100 : 0;
+
+    const result: EvalBenchmarkResult = {
+      benchmarkType: settings.benchmarkType,
+      totalSamples: samples.length,
+      passedSamples,
+      score,
+      scorePercent: Math.round(score * 10) / 10,
+      samples,
+      elapsedMs,
+    };
+
+    evalBenchmarkHistory.push(result);
+    updateEvalResults(result);
+    renderEvalSamples(samples);
+
+    setMessage(`Evaluation complete: ${result.scorePercent}%`, passedSamples > 0 ? "ok" : "warn");
+  } catch (error) {
+    setMessage(String(error), "error");
+    appendBenchmarkLog(String(error));
+  } finally {
+    evalAbortController = null;
+    syncBenchmarkServerState();
+  }
+}
+
+function getScorerForBenchmark(type: EvalBenchmarkType): (actual: string, expected: string) => boolean {
+  switch (type) {
+    case "humaneval":
+    case "mbpp":
+      return scorePythonSample;
+    case "gsm8k":
+      return scoreGsm8kSample;
+    case "mmlu":
+    case "arc":
+    case "hellaswag":
+    case "winogrande":
+      return scoreMultipleChoiceSample;
+    case "truthfulqa":
+      return scoreTruthfulqaSample;
+  }
+}
+
+async function requestEvalCompletion(
+  prompt: string,
+  temperature: number,
+  baseUrl: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const response = await fetch(`${baseUrl}/completion`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      n_predict: 256,
+      temperature,
+      stop: ["\n\n", "```"],
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Server returned ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.content || data.result || "";
+}
+
+function resetEvalResults() {
+  evalBenchmarkHistory = [];
+  evalScorePercent.textContent = "-";
+  evalPassedCount.textContent = "-";
+  evalTotalCount.textContent = "-";
+  evalElapsedTime.textContent = "-";
+  evalSamplesList.innerHTML = "";
+}
+
+function updateEvalProgress(samples: EvalSampleResult[]) {
+  const passed = samples.filter(s => s.passed).length;
+  const score = samples.length > 0 ? (passed / samples.length) * 100 : 0;
+  evalScorePercent.textContent = Math.round(score * 10) / 10 + "";
+  evalPassedCount.textContent = passed + "";
+  evalTotalCount.textContent = samples.length + "";
+}
+
+function updateEvalResults(result: EvalBenchmarkResult) {
+  evalScorePercent.textContent = result.scorePercent + "";
+  evalPassedCount.textContent = result.passedSamples + "";
+  evalTotalCount.textContent = result.totalSamples + "";
+  evalElapsedTime.textContent = (result.elapsedMs / 1000).toFixed(2);
+}
+
+function renderEvalSamples(samples: EvalSampleResult[]) {
+  evalSamplesList.innerHTML = "";
+
+  for (const sample of samples) {
+    const card = document.createElement("div");
+    card.className = `eval-sample-card ${sample.passed ? "eval-pass" : "eval-fail"}`;
+
+    card.innerHTML = `
+      <div class="eval-sample-header">
+        <span class="eval-sample-index">Sample ${sample.index}</span>
+        <span class="eval-sample-status ${sample.passed ? "pass" : "fail"}">${sample.passed ? "PASS" : "FAIL"}</span>
+      </div>
+      <div class="eval-sample-prompt">${escapeHtml(sample.prompt)}</div>
+      <div class="eval-sample-expected">${escapeHtml(sample.expected)}</div>
+      <div class="eval-sample-actual">${escapeHtml(sample.actual)}</div>
+    `;
+
+    evalSamplesList.appendChild(card);
+  }
+}
+
+function escapeHtml(text: string): string {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function bindEvents() {
@@ -2256,6 +2550,7 @@ function bindEvents() {
   $("reset-app-data").addEventListener("click", () => resetEverything().catch(showError));
   $("theme-select").addEventListener("change", () => applyTheme(value("theme-select")));
   $("apply-advanced-preset").addEventListener("click", applyAdvancedPreset);
+  $("pick-draft-model").addEventListener("click", () => chooseDraftModel().catch(showError));
   $("profile-select").addEventListener("change", loadSelectedProfileFromSelector);
   $("new-model-profile").addEventListener("click", startNewProfile);
   $("save-model-profile").addEventListener("click", () => saveSelectedModelProfile().catch(showError));
@@ -2275,6 +2570,8 @@ function bindEvents() {
   $("save-benchmark-settings").addEventListener("click", () => saveBenchmarkSettings().catch(showError));
   $("run-benchmark").addEventListener("click", () => runBenchmark().catch(showError));
   $("benchmark-preset").addEventListener("change", applyBenchmarkPreset);
+  $("benchmark-mode").addEventListener("change", () => setBenchmarkMode(value("benchmark-mode") as BenchmarkMode));
+  $("save-benchmark-settings").addEventListener("click", () => saveEvalSettings().catch(showError));
   $("copy-benchmark-summary").addEventListener("click", () => copyBenchmarkSummary().catch(showError));
   $("share-benchmark-twitter").addEventListener("click", shareBenchmarkOnTwitter);
   $("app-tab-control").addEventListener("click", () => setAppTab("control"));
@@ -2346,6 +2643,7 @@ function bindEvents() {
     "cache-type-k",
     "cache-type-v",
     "flash-attention",
+    "kvu",
     "kv-offload",
     "op-offload",
     "device",
@@ -2371,6 +2669,8 @@ function bindEvents() {
     "spec-ngram-mod-n-match",
     "spec-ngram-mod-n-min",
     "spec-ngram-mod-n-max",
+    "spec-draft-model-path",
+    "reasoning-preserve",
     "no-cpu-moe",
     "reasoning-format",
     "reasoning-budget",
@@ -2390,9 +2690,7 @@ function bindEvents() {
   $("mlock").addEventListener("change", schedulePreview);
   $("embeddings").addEventListener("change", schedulePreview);
   $("tools-all").addEventListener("change", schedulePreview);
-  $("jinja").addEventListener("change", schedulePreview);
-  $("verbose").addEventListener("change", schedulePreview);
-  $("preserve-thinking").addEventListener("change", () => {
+  $("reasoning-preserve").addEventListener("change", () => {
     syncPreserveThinking();
     schedulePreview();
   });

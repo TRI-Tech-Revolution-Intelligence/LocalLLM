@@ -40,6 +40,7 @@ export interface ServerConfig {
   cacheTypeK: string;
   cacheTypeV: string;
   flashAttention: string;
+  kvu: string;
   enableGpuMemoryOptions: boolean;
   kvOffload: string;
   noHost: boolean;
@@ -72,9 +73,10 @@ export interface ServerConfig {
   specNgramModNMatch: number;
   specNgramModNMin: number;
   specNgramModNMax: number;
+  specDraftModelPath: string;
   noCpuMoe: number;
   enableReasoningOptions: boolean;
-  preserveThinking: boolean;
+  reasoningPreserve: string;
   reasoningFormat: string;
   reasoningBudget: string;
   chatTemplateKwargs: string;
@@ -150,6 +152,41 @@ export interface HfRepoFile {
 export type HfModelSort = "trending" | "updated" | "downloads";
 export type AppTab = "control" | "benchmark" | "webui" | "agent";
 export type ConfirmKind = "warning" | "danger";
+export type BenchmarkMode = "performance" | "evaluation";
+export type EvalBenchmarkType =
+  | "humaneval"
+  | "mbpp"
+  | "gsm8k"
+  | "mmlu"
+  | "arc"
+  | "hellaswag"
+  | "truthfulqa"
+  | "winogrande";
+
+export interface EvalBenchmarkSettings {
+  benchmarkType: EvalBenchmarkType;
+  sampleCount: string;
+  temperature: string;
+}
+
+export interface EvalSampleResult {
+  index: number;
+  prompt: string;
+  expected: string;
+  actual: string;
+  passed: boolean;
+}
+
+export interface EvalBenchmarkResult {
+  benchmarkType: EvalBenchmarkType;
+  totalSamples: number;
+  passedSamples: number;
+  score: number;
+  scorePercent: number;
+  samples: EvalSampleResult[];
+  elapsedMs: number;
+  error?: string;
+}
 export type BenchmarkPreset = "quick" | "standard" | "long";
 export type AgentPermission = "allow" | "ask" | "deny";
 export type AgentTool =

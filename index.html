@@ -209,6 +209,21 @@
                     <option value="auto">auto</option>
                   </select>
                 </label>
+                <label>
+                  KV update (-kvu) f16, q8_0, q4_0
+                  <select id="kvu">
+                    <option value="">Default</option>
+                    <option value="f32">f32</option>
+                    <option value="f16">f16</option>
+                    <option value="bf16">bf16</option>
+                    <option value="q8_0">q8_0</option>
+                    <option value="q4_0">q4_0</option>
+                    <option value="q4_1">q4_1</option>
+                    <option value="iq4_nl">iq4_nl</option>
+                    <option value="q5_0">q5_0</option>
+                    <option value="q5_1">q5_1</option>
+                  </select>
+                </label>
               </div>
             </details>
 
@@ -358,19 +373,23 @@
               </label>
               <div class="form-grid advanced-grid">
                 <label>
-                  Spec type none, draft-mtp, ngram-mod
+                  Spec type none, draft-mtp, draft-dflash, draft-dspark, ngram-mod
                   <select id="spec-type">
                     <option value="">Default</option>
                     <option value="none">none</option>
                     <option value="draft-simple">draft-simple</option>
                     <option value="draft-eagle3">draft-eagle3</option>
                     <option value="draft-mtp">draft-mtp</option>
+                    <option value="draft-dflash">draft-dflash</option>
+                    <option value="draft-dspark">draft-dspark</option>
                     <option value="ngram-simple">ngram-simple</option>
                     <option value="ngram-map-k">ngram-map-k</option>
                     <option value="ngram-map-k4v">ngram-map-k4v</option>
                     <option value="ngram-mod">ngram-mod</option>
                     <option value="ngram-cache">ngram-cache</option>
                     <option value="draft-mtp,ngram-mod">draft-mtp,ngram-mod</option>
+                    <option value="draft-dflash,ngram-mod">draft-dflash,ngram-mod</option>
+                    <option value="draft-dspark,ngram-mod">draft-dspark,ngram-mod</option>
                   </select>
                 </label>
                 <label>
@@ -404,6 +423,14 @@
               </div>
             </details>
 
+            <div class="path-row">
+              <label>
+                Draft model (-md)
+                <input id="spec-draft-model-path" autocomplete="off" spellcheck="false" placeholder="path/to/draft-model.gguf" />
+              </label>
+              <button id="pick-draft-model" type="button">Browse</button>
+            </div>
+
             <details id="reasoning-options" class="option-group collapsible-group" open>
               <summary class="option-group-heading">
                 <h3>Chat & Reasoning</h3>
@@ -436,9 +463,14 @@
                   <input id="reasoning-budget" autocomplete="off" spellcheck="false" placeholder="-1" />
                 </label>
               </div>
-              <label class="checkbox-label">
-                <input id="preserve-thinking" type="checkbox" />
-                Preserve thinking
+              <label>
+                  Reasoning preserve none, flag (--reasoning-preserve), chat-template
+                  <select id="reasoning-preserve">
+                    <option value="">Default</option>
+                    <option value="none">none</option>
+                    <option value="flag">--reasoning-preserve</option>
+                    <option value="chat-template">chat-template-kwargs</option>
+                  </select>
               </label>
               <label>
                 Chat template kwargs
@@ -703,6 +735,16 @@
 
           <div class="form-grid benchmark-grid">
             <label>
+              Mode
+              <select id="benchmark-mode">
+                <option value="performance">Performance</option>
+                <option value="evaluation">Evaluation</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="benchmark-performance-settings" class="form-grid benchmark-grid">
+            <label>
               Scenario
               <select id="benchmark-preset">
                 <option value="quick">Quick chat</option>
@@ -725,6 +767,30 @@
             <label class="benchmark-prompt-field">
               Generation prompt
               <textarea id="benchmark-prompt" rows="4" spellcheck="true"></textarea>
+            </label>
+          </div>
+
+          <div id="benchmark-evaluation-settings" class="form-grid benchmark-grid" hidden>
+            <label>
+              Benchmark
+              <select id="eval-benchmark-type">
+                <option value="humaneval">HumanEval (Code Generation)</option>
+                <option value="mbpp">MBPP (Python Problems)</option>
+                <option value="gsm8k">GSM8K (Math Word Problems)</option>
+                <option value="mmlu">MMLU (General Knowledge)</option>
+                <option value="arc">ARC (Science Reasoning)</option>
+                <option value="hellaswag">HellaSwag (Commonsense)</option>
+                <option value="truthfulqa">TruthfulQA (Truthfulness)</option>
+                <option value="winogrande">WinoGrande (Coreference)</option>
+              </select>
+            </label>
+            <label>
+              Sample count
+              <input id="eval-sample-count" type="number" min="1" max="100" step="1" />
+            </label>
+            <label>
+              Temperature
+              <input id="eval-temperature" type="number" min="0" max="2" step="0.1" />
             </label>
           </div>
 
@@ -759,6 +825,34 @@
               <strong id="benchmark-output-tokens">-</strong>
               <small>tokens</small>
             </div>
+          </div>
+
+          <div class="benchmark-results" id="eval-results" hidden>
+            <div class="benchmark-result-card eval-score-card">
+              <span>Score</span>
+              <strong id="eval-score-percent">-</strong>
+              <small>%</small>
+            </div>
+            <div class="benchmark-result-card">
+              <span>Passed</span>
+              <strong id="eval-passed-count">-</strong>
+              <small>samples</small>
+            </div>
+            <div class="benchmark-result-card">
+              <span>Total</span>
+              <strong id="eval-total-count">-</strong>
+              <small>samples</small>
+            </div>
+            <div class="benchmark-result-card">
+              <span>Time</span>
+              <strong id="eval-elapsed-time">-</strong>
+              <small>s</small>
+            </div>
+          </div>
+
+          <div id="eval-samples-container" class="eval-samples" hidden>
+            <h3>Sample Results</h3>
+            <div id="eval-samples-list" class="eval-samples-list"></div>
           </div>
 
           <div class="benchmark-visual-grid">

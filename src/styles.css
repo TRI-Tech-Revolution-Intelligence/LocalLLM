@@ -954,6 +954,102 @@ h3 {
   }
 }
 
+.eval-score-card strong {
+  font-size: 3.2rem;
+}
+
+.eval-samples {
+  margin-top: 16px;
+}
+
+.eval-samples h3 {
+  color: var(--heading);
+  font-size: 0.92rem;
+  margin: 0 0 10px;
+}
+
+.eval-samples-list {
+  display: grid;
+  gap: 10px;
+}
+
+.eval-sample-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.eval-sample-card.eval-pass {
+  border-color: var(--success);
+}
+
+.eval-sample-card.eval-fail {
+  border-color: var(--danger);
+}
+
+.eval-sample-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.eval-sample-index {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.eval-sample-status {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.eval-sample-status.pass {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+}
+
+.eval-sample-status.fail {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+}
+
+.eval-sample-prompt {
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 8px;
+  background: var(--bg);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.eval-sample-expected,
+.eval-sample-actual {
+  font-size: 0.8rem;
+  padding: 8px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.eval-sample-expected {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
+}
+
+.eval-sample-actual {
+  color: var(--text);
+  background: var(--bg);
+}
+
 @media (max-width: 760px) {
   .benchmark-grid,
   .benchmark-results,
