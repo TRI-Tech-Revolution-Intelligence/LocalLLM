@@ -2572,10 +2572,9 @@ fn stable_id(value: &str) -> String {
 }
 
 fn normalized_path_string(path: &Path) -> String {
-    fs::canonicalize(path)
-        .unwrap_or_else(|_| path.to_path_buf())
-        .to_string_lossy()
-        .into_owned()
+    let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let s = resolved.to_string_lossy().into_owned();
+    s.strip_prefix("\\\\?\\").map(str::to_owned).unwrap_or(s)
 }
 
 fn model_cache_scope(model_dir: &str, manual_models: &[ModelEntry]) -> (String, Vec<String>) {
@@ -2613,8 +2612,9 @@ fn read_model_cache(
         Err(_) => return Ok(Vec::new()),
     };
     let (model_dir, manual_model_paths) = model_cache_scope(model_dir, manual_models);
+    let cached_model_dir = cache.model_dir.strip_prefix("\\\\?\\").unwrap_or(&cache.model_dir).to_string();
 
-    if cache.model_dir == model_dir && cache.manual_model_paths == manual_model_paths {
+    if cached_model_dir == model_dir && cache.manual_model_paths == manual_model_paths {
         Ok(dedupe_models(cache.models))
     } else {
         Ok(Vec::new())
