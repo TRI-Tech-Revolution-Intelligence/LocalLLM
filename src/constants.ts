@@ -131,7 +131,7 @@ export const defaultServerConfig: ServerConfig = {
   cacheTypeK: "q8_0",
   cacheTypeV: "q8_0",
   flashAttention: "",
-  kvu: "",
+  kvu: false,
   enableGpuMemoryOptions: false,
   kvOffload: "",
   noHost: false,

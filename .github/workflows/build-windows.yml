@@ -1,4 +1,4 @@
-name: Build Windows x64
+name: Build Windows
 
 on:
   push:
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   build-windows-x64:
-    name: Build Windows x64
+    name: Build Windows (x64)
     runs-on: windows-2025
     env:
       RUST_TARGET: x86_64-pc-windows-msvc
@@ -62,9 +62,48 @@ jobs:
             src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/msi/*.msi
             src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/nsis/*.exe
 
-  release-windows-x64:
-    name: Upload Windows x64 to Release
-    needs: [build-windows-x64]
+  build-windows-arm64:
+    name: Build Windows (arm64)
+    runs-on: windows-11-arm
+    env:
+      RUST_TARGET: aarch64-pc-windows-msvc
+      PI_TARGET_TRIPLE: aarch64-pc-windows-msvc
+      ARTIFACT_NAME: windows-arm64-bundles
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.RUST_TARGET }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22.19.0'
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri (Windows arm64)
+        run: npm run tauri build -- --target "$env:RUST_TARGET"
+
+      - name: Upload Windows arm64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/${{ env.RUST_TARGET }}/release/*.exe
+            src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/msi/*.msi
+            src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/nsis/*.exe
+
+  release-windows:
+    name: Upload Windows to Release
+    needs: [build-windows-x64, build-windows-arm64]
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
@@ -74,13 +113,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: 'windows-x64-bundles'
+          pattern: 'windows-*-bundles'
           path: release-artifacts
 
       - name: Upload assets to release
         env:
           GH_TOKEN: ${{ github.token }}
-          UPLOAD_PREFIX: windows-x64
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             TAG="${{ github.event.release.tag_name }}"
@@ -89,27 +127,26 @@ jobs:
           else
             TAG="${{ github.ref_name }}"
           fi
-          echo "Uploading Windows x64 assets to tag: $TAG"
+          echo "Uploading Windows assets to tag: $TAG"
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
 
-          mapfile -d '' ASSETS < <(find release-artifacts -type f \( \
-            -name '*.msi' -o \
-            -name '*.exe' \
-          \) -print0)
-
-          if [ "${#ASSETS[@]}" -eq 0 ]; then
-            echo "No Windows x64 release assets were found."
-            find release-artifacts -maxdepth 4 -type f -print
-            exit 1
+          mkdir -p upload-assets
+          if [ -d "release-artifacts/windows-x64-bundles" ]; then
+            mapfile -d '' ASSETS_X64 < <(find release-artifacts/windows-x64-bundles -type f \( -name '*.msi' -o -name '*.exe' \) -print0)
+            for f in "${ASSETS_X64[@]}"; do
+              cp "$f" "upload-assets/windows-x64-$(basename "$f")"
+            done
+          fi
+          if [ -d "release-artifacts/windows-arm64-bundles" ]; then
+            mapfile -d '' ASSETS_ARM64 < <(find release-artifacts/windows-arm64-bundles -type f \( -name '*.msi' -o -name '*.exe' \) -print0)
+            for f in "${ASSETS_ARM64[@]}"; do
+              cp "$f" "upload-assets/windows-arm64-$(basename "$f")"
+            done
           fi
 
-          mkdir -p upload-assets
-          for f in "${ASSETS[@]}"; do
-            cp "$f" "upload-assets/${UPLOAD_PREFIX}-$(basename "$f")"
-          done
-
           for f in upload-assets/*; do
+            [ -e "$f" ] || continue
             gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY" --clobber
           done

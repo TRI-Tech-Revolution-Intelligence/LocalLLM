@@ -203,6 +203,7 @@ async function run() {
         cacheTypeK: "q8_0",
         cacheTypeV: "q8_0",
         flashAttention: "",
+        kvu: false,
         enableGpuMemoryOptions: true,
         fit: "",
         fitTarget: "",
@@ -361,6 +362,7 @@ async function run() {
                 args.config.enableKvCacheOptions && args.config.cacheTypeV
                   ? `-ctv ${args.config.cacheTypeV}`
                   : "",
+                args.config.enableKvCacheOptions && args.config.kvu ? "-kvu" : "",
                 args.config.enableGpuMemoryOptions && args.config.device
                   ? `--device ${args.config.device}`
                   : "",
@@ -595,6 +597,26 @@ async function run() {
     await page.locator("#app-tab-benchmark").click();
     await expectTextIncludes(page, "#app-view-benchmark", "Prefill", "benchmark prefill metric");
     await expectTextIncludes(page, "#app-view-benchmark", "Generate", "benchmark generation metric");
+    if (await page.locator("#benchmark-visual-grid").getAttribute("hidden") !== null) {
+      throw new Error("benchmark-visual-grid should be visible in performance mode");
+    }
+    if (await page.locator("#benchmark-share-panel").getAttribute("hidden") !== null) {
+      throw new Error("benchmark-share-panel should be visible in performance mode");
+    }
+    if (await page.locator("#benchmark-transcript").getAttribute("hidden") !== null) {
+      throw new Error("benchmark-transcript should be visible in performance mode");
+    }
+    if (await page.locator("#eval-samples-container").getAttribute("hidden") === null) {
+      throw new Error("eval-samples-container should be hidden in performance mode");
+    }
+    const sampleBelowLatency = await page.evaluate(() => {
+      const visualGrid = document.querySelector("#benchmark-visual-grid");
+      const evalSamples = document.querySelector("#eval-samples-container");
+      return Boolean(visualGrid && evalSamples && (visualGrid.compareDocumentPosition(evalSamples) & Node.DOCUMENT_POSITION_FOLLOWING));
+    });
+    if (!sampleBelowLatency) {
+      throw new Error("eval-samples-container should be positioned below benchmark-visual-grid in DOM order");
+    }
     await page.locator("#benchmark-run-count").fill("1");
     await page.locator("#benchmark-generate-tokens").fill("64");
     await page.locator("#run-benchmark").click();
@@ -620,6 +642,14 @@ async function run() {
     if (benchmarkRequests[3].n_predict !== 64) {
       throw new Error(`generation benchmark should use requested n_predict=64: ${JSON.stringify(benchmarkRequests[3])}`);
     }
+    await page.locator("#benchmark-mode").selectOption("evaluation");
+    if (await page.locator("#eval-samples-container").getAttribute("hidden") !== null) {
+      throw new Error("eval-samples-container should be visible in evaluation mode");
+    }
+    if (await page.locator("#benchmark-visual-grid").getAttribute("hidden") === null) {
+      throw new Error("benchmark-visual-grid should be hidden in evaluation mode");
+    }
+    await page.locator("#benchmark-mode").selectOption("performance");
     await page.locator("#app-tab-control").click();
 
     await page.locator("#hf-model-search").fill("qwen gguf");

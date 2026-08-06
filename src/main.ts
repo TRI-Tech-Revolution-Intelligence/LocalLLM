@@ -528,7 +528,7 @@ function readServerConfig(): ServerConfig {
     cacheTypeK: value("cache-type-k"),
     cacheTypeV: value("cache-type-v"),
     flashAttention: value("flash-attention"),
-    kvu: value("kvu"),
+    kvu: checked("kvu"),
     enableGpuMemoryOptions: checked("enable-gpu-memory-options"),
     kvOffload: value("kv-offload"),
     noHost: checked("no-host"),
@@ -606,7 +606,7 @@ function hydrateServerUi(server: ServerConfig) {
   setValue("cache-type-k", server.cacheTypeK);
   setValue("cache-type-v", server.cacheTypeV);
   setValue("flash-attention", server.flashAttention);
-  setValue("kvu", server.kvu ?? "");
+  setChecked("kvu", Boolean(server.kvu));
   setChecked("enable-gpu-memory-options", server.enableGpuMemoryOptions);
   setValue("kv-offload", server.kvOffload ?? "");
   setChecked("no-host", server.noHost ?? false);
@@ -671,7 +671,7 @@ function hydrateUi() {
   hydrateServerUi(config.server);
   hydrateBenchmarkSettings();
   hydrateEvalSettings();
-  setBenchmarkMode("performance");
+  setBenchmarkMode((value("benchmark-mode") as BenchmarkMode) || "performance");
   resetBenchmarkResults();
   syncBenchmarkServerState();
 }
@@ -905,10 +905,10 @@ function setBenchmarkMode(mode: BenchmarkMode) {
   benchmarkEvaluationSettings.hidden = !isEval;
   benchmarkResults.hidden = isEval;
   evalResults.hidden = !isEval;
-  evalSamplesContainer.hidden = isEval;
-  $("benchmark-visual-grid").hidden = !isEval;
+  evalSamplesContainer.hidden = !isEval;
+  $("benchmark-visual-grid").hidden = isEval;
   $("benchmark-share-panel").hidden = isEval;
-  $("benchmark-transcript").hidden = isEval;
+  $("benchmark-transcript").hidden = false;
 }
 
 function createModelRow(model: ModelEntry): HTMLButtonElement {
@@ -1440,7 +1440,7 @@ function applyAdvancedPreset() {
   setValue("spec-draft-p-split", "");
   setChecked("no-mmap", false);
   setChecked("mlock", false);
-  setValue("kvu", "");
+  setChecked("kvu", false);
   setValue("batch-size", 0);
   setValue("ubatch-size", 0);
   setValue("parallel", -1);
@@ -1809,7 +1809,7 @@ function updateCommandHelper() {
   );
 
   if (checked("enable-kv-cache-options")) {
-    const cacheNotes = [value("cache-type-k") && `K ${value("cache-type-k")}`, value("cache-type-v") && `V ${value("cache-type-v")}`, value("flash-attention") && `flash ${value("flash-attention")}`].filter(Boolean);
+    const cacheNotes = [value("cache-type-k") && `K ${value("cache-type-k")}`, value("cache-type-v") && `V ${value("cache-type-v")}`, value("flash-attention") && `flash ${value("flash-attention")}`, checked("kvu") && "KV update (-kvu)"].filter(Boolean);
     if (cacheNotes.length) notes.push(`KV cache: ${cacheNotes.join(", ")}`);
   }
   if (checked("enable-gpu-memory-options")) {
@@ -2581,11 +2581,17 @@ function bindEvents() {
   $("start-server").addEventListener("click", () => startServer().catch(showError));
   $("stop-server").addEventListener("click", () => stopServer().catch(showError));
   $("download-model").addEventListener("click", () => downloadModel().catch(showError));
-  $("save-benchmark-settings").addEventListener("click", () => saveBenchmarkSettings().catch(showError));
+  $("save-benchmark-settings").addEventListener("click", () => {
+    const mode = (value("benchmark-mode") as BenchmarkMode) || "performance";
+    if (mode === "evaluation") {
+      saveEvalSettings().catch(showError);
+    } else {
+      saveBenchmarkSettings().catch(showError);
+    }
+  });
   $("run-benchmark").addEventListener("click", () => runBenchmark().catch(showError));
   $("benchmark-preset").addEventListener("change", applyBenchmarkPreset);
   $("benchmark-mode").addEventListener("change", () => setBenchmarkMode(value("benchmark-mode") as BenchmarkMode));
-  $("save-benchmark-settings").addEventListener("click", () => saveEvalSettings().catch(showError));
   $("copy-benchmark-summary").addEventListener("click", () => copyBenchmarkSummary().catch(showError));
   $("share-benchmark-twitter").addEventListener("click", shareBenchmarkOnTwitter);
   $("app-tab-control").addEventListener("click", () => setAppTab("control"));
@@ -2702,6 +2708,7 @@ function bindEvents() {
   $("cpu-moe").addEventListener("change", schedulePreview);
   $("no-mmap").addEventListener("change", schedulePreview);
   $("mlock").addEventListener("change", schedulePreview);
+  $("kvu").addEventListener("change", schedulePreview);
   $("embeddings").addEventListener("change", schedulePreview);
   $("tools-all").addEventListener("change", schedulePreview);
   $("reasoning-preserve").addEventListener("change", () => {

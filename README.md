@@ -127,15 +127,11 @@ with CI runners for those systems. Tauri desktop bundles are OS-specific.
 
 ## CI Release Builds
 
-GitHub Actions builds each operating system and CPU architecture in a separate
-workflow:
+GitHub Actions organizes release builds by operating system (SO), splitting processor architectures (x64 and arm64) within each workflow:
 
-- Linux x64: `.github/workflows/build-linux-x64.yml`
-- Linux arm64: `.github/workflows/build-linux-arm64.yml`
-- Windows x64: `.github/workflows/build-windows-x64.yml`
-- Windows arm64: `.github/workflows/build-windows-arm64.yml`
-- macOS x64: `.github/workflows/build-macos-x64.yml`
-- macOS arm64: `.github/workflows/build-macos-arm64.yml`
+- Linux (x64 & arm64): `.github/workflows/build-linux.yml`
+- Windows (x64 & arm64): `.github/workflows/build-windows.yml`
+- macOS (x64 & arm64): `.github/workflows/build-macos.yml`
 
 Tag, release, and manual release uploads prefix uploaded assets with the
 workflow platform, such as `windows-x64-` or `macos-arm64-`, so artifacts from

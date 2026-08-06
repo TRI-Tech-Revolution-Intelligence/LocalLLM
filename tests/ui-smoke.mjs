@@ -37,7 +37,7 @@ await page.addInitScript(() => {
   const server = {
     modelPath: "", host: "127.0.0.1", port: 8080, ctxSize: 4096, gpuLayers: "", threads: 0,
     batchSize: 2048, ubatchSize: 512, parallel: -1, enableKvCacheOptions: true, cacheTypeK: "q8_0",
-    cacheTypeV: "q8_0", flashAttention: "", enableGpuMemoryOptions: false, kvOffload: "", noHost: false,
+    cacheTypeV: "q8_0", flashAttention: "", kvu: false, enableGpuMemoryOptions: false, kvOffload: "", noHost: false,
     opOffload: "", fit: "", fitTarget: "", fitCtx: 0, device: "", tensorSplit: "", splitMode: "",
     mainGpu: "", cpuMoe: false, enableSamplingOptions: false, temperature: "", topK: "", topP: "",
     minP: "", typicalP: "", repeatPenalty: "", presencePenalty: "", frequencyPenalty: "",

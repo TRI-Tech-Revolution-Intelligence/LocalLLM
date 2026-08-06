@@ -99,6 +99,8 @@ struct ServerConfig {
     cache_type_k: String,
     cache_type_v: String,
     flash_attention: String,
+    #[serde(default, deserialize_with = "deserialize_bool_from_any")]
+    kvu: bool,
     enable_gpu_memory_options: bool,
     kv_offload: String,
     no_host: bool,
@@ -169,6 +171,7 @@ impl Default for ServerConfig {
             cache_type_k: "q8_0".into(),
             cache_type_v: "q8_0".into(),
             flash_attention: String::new(),
+            kvu: false,
             enable_gpu_memory_options: false,
             kv_offload: String::new(),
             no_host: false,
@@ -270,6 +273,8 @@ struct ServerLaunchConfig {
     cache_type_k: String,
     cache_type_v: String,
     flash_attention: String,
+    #[serde(default, deserialize_with = "deserialize_bool_from_any")]
+    kvu: bool,
     enable_gpu_memory_options: bool,
     kv_offload: String,
     no_host: bool,
@@ -342,6 +347,7 @@ impl Default for ServerLaunchConfig {
             cache_type_k: server.cache_type_k,
             cache_type_v: server.cache_type_v,
             flash_attention: server.flash_attention,
+            kvu: server.kvu,
             enable_gpu_memory_options: server.enable_gpu_memory_options,
             kv_offload: server.kv_offload,
             no_host: server.no_host,
@@ -546,6 +552,8 @@ struct BenchmarkRequest {
     cache_type_k: String,
     cache_type_v: String,
     flash_attention: String,
+    #[serde(default, deserialize_with = "deserialize_bool_from_any")]
+    kvu: bool,
     enable_gpu_memory_options: bool,
     #[serde(default, alias = "devices")]
     device: String,
@@ -582,6 +590,7 @@ impl Default for BenchmarkRequest {
             cache_type_k: "q8_0".into(),
             cache_type_v: "q8_0".into(),
             flash_attention: String::new(),
+            kvu: false,
             enable_gpu_memory_options: false,
             device: String::new(),
             kv_offload: String::new(),
@@ -747,6 +756,22 @@ where
         _ => Err(serde::de::Error::custom(
             "expected a string, number, bool, or null",
         )),
+    }
+}
+
+fn deserialize_bool_from_any<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Bool(b) => Ok(b),
+        serde_json::Value::String(s) => match s.to_lowercase().trim() {
+            "true" | "1" | "on" | "yes" => Ok(true),
+            _ => Ok(false),
+        },
+        serde_json::Value::Number(n) => Ok(n.as_i64().map_or(false, |v| v != 0)),
+        _ => Ok(false),
     }
 }
 
@@ -2861,6 +2886,9 @@ fn build_server_args(config: &ServerLaunchConfig) -> Result<Vec<String>, String>
         push_non_empty_arg(&mut args, "-ctk", &config.cache_type_k);
         push_non_empty_arg(&mut args, "-ctv", &config.cache_type_v);
         push_non_empty_arg(&mut args, "-fa", &config.flash_attention);
+        if config.kvu {
+            args.push("-kvu".into());
+        }
     }
     if config.enable_gpu_memory_options {
         push_toggle_arg(
@@ -3071,6 +3099,9 @@ fn build_benchmark_args(request: &BenchmarkRequest) -> Result<Vec<String>, Strin
         push_non_empty_arg(&mut args, "-ctk", &request.cache_type_k);
         push_non_empty_arg(&mut args, "-ctv", &request.cache_type_v);
         push_non_empty_arg(&mut args, "-fa", &request.flash_attention);
+        if request.kvu {
+            args.push("-kvu".into());
+        }
     }
     if request.enable_gpu_memory_options {
         push_toggle_arg(

@@ -40,7 +40,7 @@ export interface ServerConfig {
   cacheTypeK: string;
   cacheTypeV: string;
   flashAttention: string;
-  kvu: string;
+  kvu: boolean;
   enableGpuMemoryOptions: boolean;
   kvOffload: string;
   noHost: boolean;

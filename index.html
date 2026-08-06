@@ -209,20 +209,9 @@
                     <option value="auto">auto</option>
                   </select>
                 </label>
-                <label>
-                  KV update (-kvu) f16, q8_0, q4_0
-                  <select id="kvu">
-                    <option value="">Default</option>
-                    <option value="f32">f32</option>
-                    <option value="f16">f16</option>
-                    <option value="bf16">bf16</option>
-                    <option value="q8_0">q8_0</option>
-                    <option value="q4_0">q4_0</option>
-                    <option value="q4_1">q4_1</option>
-                    <option value="iq4_nl">iq4_nl</option>
-                    <option value="q5_0">q5_0</option>
-                    <option value="q5_1">q5_1</option>
-                  </select>
+                <label class="checkbox-label">
+                  <input id="kvu" type="checkbox" />
+                  KV update (-kvu)
                 </label>
               </div>
             </details>
@@ -850,10 +839,6 @@
             </div>
           </div>
 
-          <div id="eval-samples-container" class="eval-samples" hidden>
-            <h3>Sample Results</h3>
-            <div id="eval-samples-list" class="eval-samples-list"></div>
-          </div>
 
           <div id="benchmark-visual-grid" class="benchmark-visual-grid">
             <section class="benchmark-visual-panel" aria-labelledby="benchmark-bars-heading">
@@ -891,6 +876,10 @@
               <h3 id="benchmark-chart-heading">Runs</h3>
               <div id="benchmark-chart" class="benchmark-chart"></div>
             </section>
+          </div>
+          <div id="eval-samples-container" class="eval-samples" hidden>
+            <h3>Sample Results</h3>
+            <div id="eval-samples-list" class="eval-samples-list"></div>
           </div>
 
           <section id="benchmark-share-panel" class="benchmark-share-panel" aria-labelledby="benchmark-share-heading">
