@@ -134,11 +134,13 @@ struct ServerConfig {
     spec_ngram_mod_n_match: u32,
     spec_ngram_mod_n_min: u32,
     spec_ngram_mod_n_max: u32,
+    spec_draft_model_path: String,
     no_cpu_moe: u32,
     #[serde(default = "default_true")]
     enable_reasoning_options: bool,
     #[serde(default = "default_true")]
     preserve_thinking: bool,
+    reasoning_preserve: String,
     reasoning_format: String,
     reasoning_budget: String,
     chat_template_kwargs: String,
@@ -203,9 +205,11 @@ impl Default for ServerConfig {
             spec_ngram_mod_n_match: 0,
             spec_ngram_mod_n_min: 0,
             spec_ngram_mod_n_max: 0,
+            spec_draft_model_path: String::new(),
             no_cpu_moe: 0,
             enable_reasoning_options: true,
             preserve_thinking: true,
+            reasoning_preserve: "flag".into(),
             reasoning_format: String::new(),
             reasoning_budget: String::new(),
             chat_template_kwargs: "{\"preserve_thinking\": true}".into(),
@@ -308,11 +312,14 @@ struct ServerLaunchConfig {
     spec_ngram_mod_n_match: u32,
     spec_ngram_mod_n_min: u32,
     spec_ngram_mod_n_max: u32,
+    spec_draft_model_path: String,
     no_cpu_moe: u32,
     #[serde(default = "default_true")]
     enable_reasoning_options: bool,
     #[serde(default = "default_true")]
+    #[allow(dead_code)]
     preserve_thinking: bool,
+    reasoning_preserve: String,
     reasoning_format: String,
     reasoning_budget: String,
     chat_template_kwargs: String,
@@ -379,9 +386,11 @@ impl Default for ServerLaunchConfig {
             spec_ngram_mod_n_match: server.spec_ngram_mod_n_match,
             spec_ngram_mod_n_min: server.spec_ngram_mod_n_min,
             spec_ngram_mod_n_max: server.spec_ngram_mod_n_max,
+            spec_draft_model_path: server.spec_draft_model_path,
             no_cpu_moe: server.no_cpu_moe,
             enable_reasoning_options: server.enable_reasoning_options,
             preserve_thinking: server.preserve_thinking,
+            reasoning_preserve: server.reasoning_preserve,
             reasoning_format: server.reasoning_format,
             reasoning_budget: server.reasoning_budget,
             chat_template_kwargs: server.chat_template_kwargs,
@@ -2956,6 +2965,7 @@ fn build_server_args(config: &ServerLaunchConfig) -> Result<Vec<String>, String>
             &config.spec_draft_p_split,
         );
         push_non_empty_arg(&mut args, "--spec-draft-p-min", &config.spec_draft_p_min);
+        push_non_empty_arg(&mut args, "-md", &config.spec_draft_model_path);
         if config.spec_ngram_mod_n_match > 0 {
             args.push("--spec-ngram-mod-n-match".into());
             args.push(config.spec_ngram_mod_n_match.to_string());
@@ -2972,14 +2982,21 @@ fn build_server_args(config: &ServerLaunchConfig) -> Result<Vec<String>, String>
     if config.enable_reasoning_options {
         push_non_empty_arg(&mut args, "--reasoning-format", &config.reasoning_format);
         push_non_empty_arg(&mut args, "--reasoning-budget", &config.reasoning_budget);
-        let chat_template_kwargs =
-            if config.preserve_thinking && config.chat_template_kwargs.trim().is_empty() {
-                "{\"preserve_thinking\": true}"
-            } else {
-                config.chat_template_kwargs.trim()
-            };
-        if config.preserve_thinking || !chat_template_kwargs.is_empty() {
-            push_non_empty_arg(&mut args, "--chat-template-kwargs", chat_template_kwargs);
+        match config.reasoning_preserve.as_str() {
+            "flag" => {
+                args.push("--chat-template-kwargs".into());
+                args.push("{\"preserve_thinking\": true}".into());
+            }
+            "chat-template" => {
+                let kwargs = config.chat_template_kwargs.trim();
+                if !kwargs.is_empty() {
+                    args.push("--chat-template-kwargs".into());
+                    args.push(kwargs.to_string());
+                }
+            }
+            _ => {
+                // "none" or empty: no preserve flags
+            }
         }
         push_non_empty_arg(&mut args, "-rea", &config.reasoning);
     }

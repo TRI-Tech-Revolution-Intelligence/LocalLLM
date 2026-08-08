@@ -410,15 +410,14 @@
                   <input id="spec-ngram-mod-n-max" type="number" min="0" step="1" />
                 </label>
               </div>
+              <div class="path-row">
+                <label>
+                  Draft model (-md)
+                  <input id="spec-draft-model-path" autocomplete="off" spellcheck="false" placeholder="path/to/draft-model.gguf" />
+                </label>
+                <button id="pick-draft-model" type="button">Browse</button>
+              </div>
             </details>
-
-            <div class="path-row">
-              <label>
-                Draft model (-md)
-                <input id="spec-draft-model-path" autocomplete="off" spellcheck="false" placeholder="path/to/draft-model.gguf" />
-              </label>
-              <button id="pick-draft-model" type="button">Browse</button>
-            </div>
 
             <details id="reasoning-options" class="option-group collapsible-group" open>
               <summary class="option-group-heading">
