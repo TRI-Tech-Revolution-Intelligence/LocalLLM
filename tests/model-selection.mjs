@@ -221,6 +221,8 @@ async function run() {
         frequencyPenalty: "",
         enableSpeculativeOptions: true,
         specType: "",
+        specDraftTypeK: "",
+        specDraftTypeV: "",
         specDraftNMax: 0,
         specDraftNMin: 0,
         specDraftPMin: "",
@@ -233,9 +235,10 @@ async function run() {
         noCpuMoe: 0,
         enableReasoningOptions: true,
         preserveThinking: true,
+        reasoningPreserve: "flag",
         reasoningFormat: "",
         reasoningBudget: "",
-        chatTemplateKwargs: "{\"preserve_thinking\": true}",
+        chatTemplateKwargs: "",
         reasoning: "",
         enableMultimodalOptions: true,
         mmproj: "",
@@ -393,11 +396,32 @@ async function run() {
                 args.config.enableSamplingOptions && args.config.frequencyPenalty
                   ? `--frequency-penalty ${args.config.frequencyPenalty}`
                   : "",
+                args.config.enableSpeculativeOptions && args.config.specDraftTypeK
+                  ? `--spec-draft-type-k ${args.config.specDraftTypeK}`
+                  : "",
+                args.config.enableSpeculativeOptions && args.config.specDraftTypeV
+                  ? `--spec-draft-type-v ${args.config.specDraftTypeV}`
+                  : "",
                 args.config.toolsAll ? "--tools all" : "",
                 args.config.jinja ? "--jinja" : "",
                 args.config.embeddings ? "--embedding" : "",
-                args.config.preserveThinking
-                  ? `--chat-template-kwargs ${args.config.chatTemplateKwargs}`
+                args.config.enableReasoningOptions && args.config.reasoningFormat
+                  ? `--reasoning-format ${args.config.reasoningFormat}`
+                  : "",
+                args.config.enableReasoningOptions && args.config.reasoningBudget
+                  ? `--reasoning-budget ${args.config.reasoningBudget}`
+                  : "",
+                args.config.enableReasoningOptions && args.config.reasoningPreserve === "flag"
+                  ? "--reasoning-preserve"
+                  : (args.config.enableReasoningOptions && args.config.reasoningPreserve === "chat-template"
+                      ? `--chat-template-kwargs ${args.config.chatTemplateKwargs || '{"preserve_thinking": true}'}`
+                      : (args.config.enableReasoningOptions && args.config.reasoningPreserve !== "none" && args.config.chatTemplateKwargs
+                          ? `--chat-template-kwargs ${args.config.chatTemplateKwargs}`
+                          : (args.config.enableReasoningOptions && args.config.reasoningPreserve !== "none" && args.config.preserveThinking
+                              ? "--reasoning-preserve"
+                              : ""))),
+                args.config.enableReasoningOptions && args.config.reasoning
+                  ? `-rea ${args.config.reasoning}`
                   : "",
               ]
                 .filter(Boolean)
@@ -538,6 +562,8 @@ async function run() {
     await expectValue(page, "#terminal-mode", "visible", "clean preset terminal default");
     await expectValue(page, "#batch-size", "0", "clean preset batch auto");
     await expectValue(page, "#no-cpu-moe", "0", "preset ncmoe default");
+    await expectValue(page, "#spec-draft-type-k", "", "clean preset spec draft type K");
+    await expectValue(page, "#spec-draft-type-v", "", "clean preset spec draft type V");
     if (!(await page.locator("#no-cpu-moe").isDisabled())) {
       throw new Error("ncmoe should be disabled by default in clean preset");
     }
@@ -553,8 +579,8 @@ async function run() {
     await expectTextIncludes(
       page,
       "#command-preview",
-      '{"preserve_thinking": true}',
-      "preserve-thinking default",
+      "--reasoning-preserve",
+      "preserve-thinking default flag",
     );
 
     await page.locator("#enable-gpu-memory-options").check();
@@ -587,11 +613,37 @@ async function run() {
     await delay(250);
     await expectTextIncludes(page, "#command-preview", "--tools all", "tools-all flag");
 
+    await page.locator("#enable-speculative-options").check();
+    await page.locator("#spec-draft-type-k").selectOption("q8_0");
+    await page.locator("#spec-draft-type-v").selectOption("bf16");
+    await delay(250);
+    await expectTextIncludes(page, "#command-preview", "--spec-draft-type-k q8_0", "spec draft type k flag");
+    await expectTextIncludes(page, "#command-preview", "--spec-draft-type-v bf16", "spec draft type v flag");
+
+    await page.locator("#reasoning").selectOption("on");
+    await page.locator("#reasoning-format").selectOption("deepseek");
+    await page.locator("#reasoning-budget").fill("2048");
+    await page.locator("#reasoning-preserve").selectOption("chat-template");
+    await page.locator("#chat-template-kwargs").fill('{"preserve_thinking": true, "custom_key": 42}');
+    await delay(250);
+    await expectTextIncludes(page, "#command-preview", "-rea on", "reasoning flag");
+    await expectTextIncludes(page, "#command-preview", "--reasoning-format deepseek", "reasoning format flag");
+    await expectTextIncludes(page, "#command-preview", "--reasoning-budget 2048", "reasoning budget flag");
+    await expectTextIncludes(page, "#command-preview", 'custom_key', "custom chat template kwargs in command");
+
+    await page.locator("#reasoning-preserve").selectOption("flag");
+    await delay(250);
+    await expectTextIncludes(page, "#command-preview", "--reasoning-preserve", "reasoning preserve flag");
+    const flagCommand = await page.locator("#command-preview").textContent();
+    if (flagCommand?.includes("--chat-template-kwargs")) {
+      throw new Error(`flag selection should replace chat template kwargs: ${flagCommand}`);
+    }
+
     await page.locator("#enable-reasoning-options").uncheck();
     await delay(250);
     const commandWithoutPreserve = await page.locator("#command-preview").textContent();
-    if (commandWithoutPreserve?.includes("preserve_thinking")) {
-      throw new Error(`preserve-thinking checkbox did not remove default kwargs: ${commandWithoutPreserve}`);
+    if (commandWithoutPreserve?.includes("preserve_thinking") || commandWithoutPreserve?.includes("--reasoning-preserve")) {
+      throw new Error(`preserve-thinking checkbox did not remove preserve flag: ${commandWithoutPreserve}`);
     }
 
     await page.locator("#app-tab-benchmark").click();

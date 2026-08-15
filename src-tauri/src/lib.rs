@@ -125,6 +125,8 @@ struct ServerConfig {
     #[serde(default = "default_true")]
     enable_speculative_options: bool,
     spec_type: String,
+    spec_draft_type_k: String,
+    spec_draft_type_v: String,
     spec_draft_n_max: u32,
     spec_draft_n_min: u32,
     spec_draft_p_min: String,
@@ -196,6 +198,8 @@ impl Default for ServerConfig {
             frequency_penalty: String::new(),
             enable_speculative_options: true,
             spec_type: String::new(),
+            spec_draft_type_k: String::new(),
+            spec_draft_type_v: String::new(),
             spec_draft_n_max: 0,
             spec_draft_n_min: 0,
             spec_draft_p_min: String::new(),
@@ -303,6 +307,8 @@ struct ServerLaunchConfig {
     #[serde(default = "default_true")]
     enable_speculative_options: bool,
     spec_type: String,
+    spec_draft_type_k: String,
+    spec_draft_type_v: String,
     spec_draft_n_max: u32,
     spec_draft_n_min: u32,
     spec_draft_p_min: String,
@@ -377,6 +383,8 @@ impl Default for ServerLaunchConfig {
             frequency_penalty: server.frequency_penalty,
             enable_speculative_options: server.enable_speculative_options,
             spec_type: server.spec_type,
+            spec_draft_type_k: server.spec_draft_type_k,
+            spec_draft_type_v: server.spec_draft_type_v,
             spec_draft_n_max: server.spec_draft_n_max,
             spec_draft_n_min: server.spec_draft_n_min,
             spec_draft_p_min: server.spec_draft_p_min,
@@ -2951,6 +2959,8 @@ fn build_server_args(config: &ServerLaunchConfig) -> Result<Vec<String>, String>
     }
     if config.enable_speculative_options {
         push_non_empty_arg(&mut args, "--spec-type", &config.spec_type);
+        push_non_empty_arg(&mut args, "--spec-draft-type-k", &config.spec_draft_type_k);
+        push_non_empty_arg(&mut args, "--spec-draft-type-v", &config.spec_draft_type_v);
         if config.spec_draft_n_max > 0 {
             args.push("--spec-draft-n-max".into());
             args.push(config.spec_draft_n_max.to_string());
@@ -2983,19 +2993,30 @@ fn build_server_args(config: &ServerLaunchConfig) -> Result<Vec<String>, String>
         push_non_empty_arg(&mut args, "--reasoning-format", &config.reasoning_format);
         push_non_empty_arg(&mut args, "--reasoning-budget", &config.reasoning_budget);
         match config.reasoning_preserve.as_str() {
+            "none" => {
+                // "none": no preserve kwargs or flag
+            }
             "flag" => {
-                args.push("--chat-template-kwargs".into());
-                args.push("{\"preserve_thinking\": true}".into());
+                args.push("--reasoning-preserve".into());
             }
             "chat-template" => {
                 let kwargs = config.chat_template_kwargs.trim();
                 if !kwargs.is_empty() {
                     args.push("--chat-template-kwargs".into());
                     args.push(kwargs.to_string());
+                } else {
+                    args.push("--chat-template-kwargs".into());
+                    args.push("{\"preserve_thinking\": true}".into());
                 }
             }
             _ => {
-                // "none" or empty: no preserve flags
+                let kwargs = config.chat_template_kwargs.trim();
+                if !kwargs.is_empty() {
+                    args.push("--chat-template-kwargs".into());
+                    args.push(kwargs.to_string());
+                } else if config.preserve_thinking {
+                    args.push("--reasoning-preserve".into());
+                }
             }
         }
         push_non_empty_arg(&mut args, "-rea", &config.reasoning);

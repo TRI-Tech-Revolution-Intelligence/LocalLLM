@@ -551,6 +551,8 @@ function readServerConfig(): ServerConfig {
     frequencyPenalty: value("frequency-penalty"),
     enableSpeculativeOptions: checked("enable-speculative-options"),
     specType: value("spec-type"),
+    specDraftTypeK: value("spec-draft-type-k"),
+    specDraftTypeV: value("spec-draft-type-v"),
     specDraftNMax: numberValue("spec-draft-n-max", 0),
     specDraftNMin: numberValue("spec-draft-n-min", 0),
     specDraftPMin: value("spec-draft-p-min"),
@@ -564,11 +566,11 @@ function readServerConfig(): ServerConfig {
     cpuMoe: checked("cpu-moe"),
     noCpuMoe: numberValue("no-cpu-moe", 0),
     enableReasoningOptions: checked("enable-reasoning-options"),
-    preserveThinking: checked("enable-reasoning-options") && (value("reasoning-preserve") === "chat-template" || value("reasoning-preserve") === "flag" || Boolean(value("chat-template-kwargs").trim())),
+    preserveThinking: checked("enable-reasoning-options") && value("reasoning-preserve") !== "none",
     reasoningPreserve: value("reasoning-preserve"),
     reasoningFormat: value("reasoning-format"),
     reasoningBudget: value("reasoning-budget"),
-    chatTemplateKwargs: value("chat-template-kwargs") || preserveThinkingDefault,
+    chatTemplateKwargs: value("reasoning-preserve") === "flag" || value("reasoning-preserve") === "none" ? "" : value("chat-template-kwargs").trim(),
     reasoning: value("reasoning"),
     enableMultimodalOptions: checked("enable-multimodal-options"),
     mmproj: value("mmproj"),
@@ -629,6 +631,8 @@ function hydrateServerUi(server: ServerConfig) {
   setValue("frequency-penalty", server.frequencyPenalty ?? "");
   setChecked("enable-speculative-options", server.enableSpeculativeOptions);
   setValue("spec-type", server.specType);
+  setValue("spec-draft-type-k", server.specDraftTypeK ?? "");
+  setValue("spec-draft-type-v", server.specDraftTypeV ?? "");
   setValue("spec-draft-n-max", server.specDraftNMax);
   setValue("spec-draft-n-min", server.specDraftNMin);
   setValue("spec-draft-p-min", server.specDraftPMin);
@@ -643,10 +647,10 @@ function hydrateServerUi(server: ServerConfig) {
   setValue("no-cpu-moe", server.noCpuMoe);
   setChecked("enable-reasoning-options", server.enableReasoningOptions);
   setValue("reasoning-preserve", server.reasoningPreserve ?? "flag");
-  setValue("reasoning-format", server.reasoningFormat);
-  setValue("reasoning-budget", server.reasoningBudget);
-  setValue("chat-template-kwargs", server.reasoningPreserve === "chat-template" ? (server.chatTemplateKwargs || preserveThinkingDefault) : "");
-  setValue("reasoning", server.reasoning);
+  setValue("reasoning-format", server.reasoningFormat ?? "");
+  setValue("reasoning-budget", server.reasoningBudget ?? "");
+  setValue("chat-template-kwargs", server.chatTemplateKwargs || (server.reasoningPreserve === "chat-template" ? preserveThinkingDefault : ""));
+  setValue("reasoning", server.reasoning ?? "");
   setChecked("enable-multimodal-options", server.enableMultimodalOptions);
   setValue("mmproj", server.mmproj);
   setChecked("embeddings", server.embeddings);
@@ -1434,6 +1438,8 @@ function applyAdvancedPreset() {
   setValue("presence-penalty", "");
   setValue("frequency-penalty", "");
   setValue("spec-type", "");
+  setValue("spec-draft-type-k", "");
+  setValue("spec-draft-type-v", "");
   setValue("spec-draft-n-max", 0);
   setValue("spec-draft-n-min", 0);
   setValue("spec-draft-p-min", "");
@@ -1453,7 +1459,7 @@ function applyAdvancedPreset() {
   setValue("reasoning-format", "");
   setValue("reasoning-budget", "");
   setValue("reasoning-preserve", "flag");
-  setValue("chat-template-kwargs", preserveThinkingDefault);
+  setValue("chat-template-kwargs", "");
   setValue("reasoning", "");
   setValue("mmproj", "");
   setChecked("embeddings", false);
@@ -1839,11 +1845,21 @@ function updateCommandHelper() {
     ].filter(Boolean);
     if (samplingNotes.length) notes.push(`sampling: ${samplingNotes.join(", ")}`);
   }
-  if (checked("enable-speculative-options") && value("spec-type")) {
-    notes.push(`speculative decoding: ${value("spec-type")}`);
+  if (checked("enable-speculative-options")) {
+    const specNotes = [
+      value("spec-type"),
+      value("spec-draft-type-k") && `draft K ${value("spec-draft-type-k")}`,
+      value("spec-draft-type-v") && `draft V ${value("spec-draft-type-v")}`,
+    ].filter(Boolean);
+    if (specNotes.length) notes.push(`speculative decoding: ${specNotes.join(", ")}`);
   }
   if (checked("enable-reasoning-options")) {
-    const reasoningNotes = [value("reasoning") && `reasoning ${value("reasoning")}`, value("reasoning-budget") && `budget ${value("reasoning-budget")}`, value("reasoning-preserve") && `preserve ${value("reasoning-preserve")}`].filter(Boolean);
+    const reasoningNotes = [
+      value("reasoning") && `reasoning ${value("reasoning")}`,
+      value("reasoning-format") && `format ${value("reasoning-format")}`,
+      value("reasoning-budget") && `budget ${value("reasoning-budget")}`,
+      value("reasoning-preserve") && `preserve ${value("reasoning-preserve")}`,
+    ].filter(Boolean);
     if (reasoningNotes.length) notes.push(`chat reasoning: ${reasoningNotes.join(", ")}`);
   }
   if (checked("enable-multimodal-options") && value("mmproj")) {
@@ -1880,7 +1896,7 @@ function syncPreserveThinking() {
   const enabled = checked("enable-reasoning-options");
   const method = value("reasoning-preserve");
   const input = $("chat-template-kwargs") as HTMLTextAreaElement;
-  input.disabled = !enabled || method !== "chat-template";
+  input.disabled = !enabled || method === "none" || method === "flag";
   if (enabled && method === "chat-template" && !input.value.trim()) {
     input.value = preserveThinkingDefault;
   }
@@ -2682,6 +2698,8 @@ function bindEvents() {
     "presence-penalty",
     "frequency-penalty",
     "spec-type",
+    "spec-draft-type-k",
+    "spec-draft-type-v",
     "spec-draft-n-max",
     "spec-draft-n-min",
     "spec-draft-p-min",

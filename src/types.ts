@@ -64,6 +64,8 @@ export interface ServerConfig {
   frequencyPenalty: string;
   enableSpeculativeOptions: boolean;
   specType: string;
+  specDraftTypeK: string;
+  specDraftTypeV: string;
   specDraftNMax: number;
   specDraftNMin: number;
   specDraftPMin: string;
